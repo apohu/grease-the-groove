@@ -337,7 +337,7 @@ details summary { cursor: pointer; }
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.6.0';
+const APP_VERSION = '0.6.1';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -509,7 +509,7 @@ const persist = {
   run(fn) {
     this.queue = this.queue.then(fn).catch(e => {
       console.warn('Écriture refusée', e);
-      toast(e && e.code === 'quota_exceeded' ? 'Stockage plein : supprime d\'anciennes séances' : 'Enregistrement impossible pour le moment');
+      toast(e && e.code === 'quota_exceeded' ? 'Stockage plein : supprime d\'anciennes séances' : `Enregistrement impossible pour le moment${e && e.code ? ` (${e.code})` : ''}`);
     });
     return this.queue;
   },
@@ -541,7 +541,7 @@ const persist = {
   },
   putWalk(w) {
     if (this.mode !== 'db') return this.saveLocal();
-    const body = clone(w);
+    const body = walkBody(w);
     return this.run(() => this.db.doc('walks/' + w.id).set(body));
   },
   deleteWalk(id) {
@@ -566,7 +566,7 @@ const persist = {
       for (const s of next.sessions) await db.doc('sessions/' + s.id).set(clone(s));
       for (const m of next.profile.measurements) await db.doc('measures/' + m.id).set(clone(m));
       for (const d of Object.values(next.days || {})) await db.doc('days/' + d.date).set(clone(d));
-      for (const w of next.walks || []) await db.doc('walks/' + w.id).set(clone(w));
+      for (const w of next.walks || []) await db.doc('walks/' + w.id).set(walkBody(w));
     });
   },
 };
@@ -629,7 +629,7 @@ async function connectStore() {
     got.days = true; settle();
   }, fail);
   db.collection('walks').onSnapshot(q => {
-    state.walks = q.docs.map(d => clone(d.data()));
+    state.walks = q.docs.map(d => walkFromBody(clone(d.data())));
     got.walks = true; settle();
   }, fail);
 }
@@ -1512,15 +1512,23 @@ function parseGpx(text, fileName) {
   if (!nodes.length) nodes = [...doc.getElementsByTagName('rtept')];
   const pts = nodes.map(n => {
     const ele = n.getElementsByTagName('ele')[0], time = n.getElementsByTagName('time')[0];
+    const hr = [...n.getElementsByTagName('*')].find(x => x.localName === 'hr' || x.localName === 'HeartRateBpm');
     return [parseFloat(n.getAttribute('lat')), parseFloat(n.getAttribute('lon')),
-      ele ? parseFloat(ele.textContent) : null, time ? Date.parse(time.textContent) : null];
+      ele ? parseFloat(ele.textContent) : null, time ? Date.parse(time.textContent) : null, hr ? parseFloat(hr.textContent) : null];
   }).filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
   if (pts.length < 2) throw new Error('vide');
   let dist = 0, gain = 0, loss = 0, ref = null;
   const cum = [0], splits = [];
   let nextKm = 1000, kmStart = pts[0][3];
+  let moving = 0;
   for (let i = 1; i < pts.length; i++) {
-    dist += haversine(pts[i - 1], pts[i]);
+    const step = haversine(pts[i - 1], pts[i]);
+    dist += step;
+    // Temps en mouvement : on ignore les arrêts (moins de 0,5 m/s) et les trous d'enregistrement.
+    if (pts[i][3] != null && pts[i - 1][3] != null) {
+      const dt = (pts[i][3] - pts[i - 1][3]) / 1000;
+      if (dt > 0 && dt <= 60 && step / dt >= 0.5) moving += dt;
+    }
     cum.push(dist);
     if (pts[i][3] != null && kmStart != null && dist >= nextKm) {
       splits.push(Math.round((pts[i][3] - kmStart) / 1000));
@@ -1540,14 +1548,38 @@ function parseGpx(text, fileName) {
   const stepN = Math.max(1, Math.ceil(pts.length / 400));
   const keep = pts.map((p, i) => [+p[0].toFixed(5), +p[1].toFixed(5), p[2] == null ? null : Math.round(p[2] * 10) / 10, Math.round(cum[i])])
     .filter((_, i) => i % stepN === 0 || i === pts.length - 1);
+  const hrAll = pts.map(p => p[4]).filter(v => Number.isFinite(v) && v > 0);
+  const eles = pts.map(p => p[2]).filter(v => v != null);
+  const hrKeep = hrAll.length ? pts.map(p => (Number.isFinite(p[4]) ? Math.round(p[4]) : 0)).filter((_, i) => i % stepN === 0 || i === pts.length - 1) : [];
   const nameNode = doc.getElementsByTagName('name')[0];
   const d = t0 != null ? new Date(t0) : new Date();
   return {
     id: uid(), date: isoOf(d), name: (nameNode && nameNode.textContent.trim()) || fileName.replace(/\.gpx$/i, ''),
     distance: Math.round(dist), duration, gain: Math.round(gain), loss: Math.round(loss), splits, points: keep, source: 'gpx',
+    moving: duration ? Math.round(moving) : null,
+    eleMin: eles.length ? Math.round(Math.min(...eles)) : null, eleMax: eles.length ? Math.round(Math.max(...eles)) : null,
+    hrAvg: hrAll.length ? Math.round(hrAll.reduce((t, v) => t + v, 0) / hrAll.length) : null, hrMax: hrAll.length ? Math.round(Math.max(...hrAll)) : null,
+    ...(hrKeep.length ? { hrs: hrKeep } : {}),
   };
 }
 const paceOf = w => (w.duration && w.distance ? w.duration / (w.distance / 1000) : null);
+// Dans la base, le tracé est rangé en tableaux plats ; en mémoire, en points [lat, lon, alt, distance].
+function walkBody(w) {
+  const { points, hrs, ...rest } = clone(w);
+  const P = points || [];
+  const hasEle = P.length && P.every(p => p[2] != null);
+  return { ...rest, track: {
+    lat: P.map(p => p[0]), lon: P.map(p => p[1]), ele: hasEle ? P.map(p => p[2]) : [], d: P.map(p => p[3]),
+    hr: Array.isArray(hrs) && hrs.length === P.length ? hrs.map(v => v || 0) : [],
+  } };
+}
+function walkFromBody(b) {
+  if (!b.track) return { points: [], ...b };
+  const t = b.track;
+  const { track, ...rest } = b;
+  return { ...rest, points: (t.lat || []).map((a, i) => [a, t.lon[i], t.ele && t.ele.length ? t.ele[i] : null, t.d[i]]),
+    hrs: t.hr && t.hr.length ? t.hr : undefined };
+}
 
 let walkView = null; // id de la marche affichée
 function renderWalks(main) {
@@ -1652,18 +1684,45 @@ function routeSvg(w, size = null) {
 function elevationSvg(w) {
   const P = w.points.filter(p => p[2] != null);
   if (P.length < 2) return '';
+  return distChart(P.map(p => [p[3], p[2]]), 10, 'Profil d\'altitude', 'm');
+}
+function hrSvg(w) {
+  if (!w.hrs) return '';
+  const P = w.points.map((p, i) => [p[3], w.hrs[i]]).filter(x => x[1] > 0);
+  return P.length > 1 ? distChart(P, 10, 'Fréquence cardiaque', 'bpm') : '';
+}
+function distChart(P, minSpan, what, unit) {
   const W = 320, H = 120, L = 36, R = 8, T = 10, B = 22;
-  const maxD = P[P.length - 1][3] || 1;
-  let min = Math.min(...P.map(p => p[2])), max = Math.max(...P.map(p => p[2]));
-  const st = niceStep(Math.max(10, max - min));
+  const maxD = P[P.length - 1][0] || 1;
+  let min = Math.min(...P.map(p => p[1])), max = Math.max(...P.map(p => p[1]));
+  const lo = min, hi = max;
+  const st = niceStep(Math.max(minSpan, max - min));
   min = Math.floor(min / st) * st; max = Math.ceil(max / st) * st; if (max === min) max += st;
   const x = d => L + d / maxD * (W - L - R), y = v => T + (1 - (v - min) / (max - min)) * (H - T - B);
-  const line = P.map((p, i) => `${i ? 'L' : 'M'}${x(p[3]).toFixed(1)},${y(p[2]).toFixed(1)}`).join(' ');
+  const line = P.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ');
   const ticks = []; for (let v = min; v <= max + 1e-9; v += st) ticks.push(v);
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Profil d'altitude, de ${Math.round(min)} à ${Math.round(max)} m">
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${what}, de ${Math.round(lo)} à ${Math.round(hi)} ${unit}">
     ${ticks.map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('')}
     <path class="area" d="${line} L${x(maxD)},${H - B} L${L},${H - B} Z"/><path class="line" d="${line}"/>
     <text x="${L}" y="${H - 6}">0 km</text><text x="${W - R}" y="${H - 6}" text-anchor="end">${fmtKm(maxD)} km</text></svg>`;
+}
+function walkDetails(w) {
+  const rows = [];
+  if (w.moving) {
+    rows.push(['En mouvement', fmtDur(w.moving)]);
+    if (w.duration - w.moving >= 30) rows.push(['Pauses', fmtDur(w.duration - w.moving)]);
+    rows.push(['Allure en mouvement', fmtPace(w.moving / (w.distance / 1000)) + '/km']);
+  }
+  if (w.splits && w.splits.length > 1) {
+    const best = Math.min(...w.splits), worst = Math.max(...w.splits);
+    rows.push(['Kilomètre le plus rapide', `${fmtPace(best)} (km ${w.splits.indexOf(best) + 1})`]);
+    rows.push(['Kilomètre le plus lent', `${fmtPace(worst)} (km ${w.splits.indexOf(worst) + 1})`]);
+  }
+  if (w.eleMin != null) rows.push(['Altitude', `${w.eleMin} à ${w.eleMax} m`]);
+  if (w.hrAvg) rows.push(['Fréquence cardiaque', `moy. ${w.hrAvg}, max ${w.hrMax} bpm`]);
+  if (!rows.length) return '';
+  return `<section><h2 class="section-title">Détails</h2><div class="panel"><div class="table-wrap"><table class="hist"><tbody>
+    ${rows.map(([k, v]) => `<tr><td>${k}</td><td class="num">${esc(v)}</td></tr>`).join('')}</tbody></table></div></div></section>`;
 }
 function renderWalk(main, id) {
   const w = state.walks.find(x => x.id === id);
@@ -1678,8 +1737,10 @@ function renderWalk(main, id) {
       <div><span class="small muted">Vitesse</span><strong class="num">${pace ? fr((3600 / pace).toFixed(1)) + ' km/h' : '–'}</strong></div>
       <div><span class="small muted">Dénivelé</span><strong class="num">${w.points && w.points.some(p => p[2] != null) ? `+${w.gain} m` : '–'}</strong></div>
     </div>
+    ${walkDetails(w)}
     ${w.points && w.points.length > 1 ? `<section><h2 class="section-title">Tracé</h2><div class="panel">${routeSvg(w)}</div></section>` : ''}
     ${elevationSvg(w) ? `<section><h2 class="section-title"><span>Altitude</span><span class="num">+${w.gain} m · −${w.loss} m</span></h2><div class="panel">${elevationSvg(w)}</div></section>` : ''}
+    ${hrSvg(w) ? `<section><h2 class="section-title"><span>Fréquence cardiaque</span><span class="num">moy. ${w.hrAvg} · max ${w.hrMax} bpm</span></h2><div class="panel">${hrSvg(w)}</div></section>` : ''}
     ${w.splits && w.splits.length ? `<section><h2 class="section-title"><span>Temps au kilomètre</span><span class="num">visée ${fmtPace(TARGET_PACE)}</span></h2>
       <div class="panel"><div class="splits">${w.splits.map((s, i) => `<div><span class="num muted">${i + 1}</span>
         <span class="sbar"><span style="width:${Math.min(100, s / (TARGET_PACE * 1.3) * 100)}%" class="${s <= TARGET_PACE ? 'ok' : ''}"></span></span>
