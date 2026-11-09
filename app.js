@@ -4,7 +4,7 @@
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.4.1';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -83,7 +83,7 @@ function bookExercises() {
       lvl('Dips', 12),
     ] },
     lsit: { name: 'L-sit', unit: 'sec', levels: [
-      lvl('Se soulever', 6, { tip: 'Objectif du livre : 6 à 8 secondes.' }),
+      lvl('Se soulever sur un support', 6, { tip: 'Sur un banc, une chaise ou autre support. Objectif du livre : 6 à 8 secondes.' }),
       lvl('Se soulever au sol', 6, { tip: 'Objectif du livre : 6 à 8 secondes.' }),
       lvl('Relevés de jambes', 10, { unit: 'reps', bis: true,
         tip: 'Pour gagner en force de compression. Assis, mains de part et d\'autre du buste, lève les jambes tendues. Une fois les 10 réussies, avance les mains, puis encore, jusqu\'aux genoux et au-delà. Si la souplesse manque, fais l\'étirement du niveau 3.' }),
@@ -131,6 +131,11 @@ function migrate(s) {
     if (ex.fromBook || !book[ex.id] || (s.sessions || []).some(x => x.exId === ex.id)) return;
     Object.assign(ex, { levels: book[ex.id].levels, current: 0, fromBook: true });
   });
+  // Précision d'Arthur (L-sit niveau 1 : sur un support).
+  const ls = (s.exercises || []).find(e => e.id === 'lsit');
+  if (ls && ls.fromBook && ls.levels[0] && ls.levels[0].name === 'Se soulever') {
+    Object.assign(ls.levels[0], { name: 'Se soulever sur un support', tip: 'Sur un banc, une chaise ou autre support. Objectif du livre : 6 à 8 secondes.' });
+  }
   return {
     ...d, ...s,
     profile: { ...d.profile, ...(s.profile || {}), measurements: Array.isArray(s.profile && s.profile.measurements) ? s.profile.measurements : [] },
