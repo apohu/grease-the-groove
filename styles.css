@@ -29,7 +29,7 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #101214;
     --surface: #171a1d;
     --raised: #212428;
@@ -47,6 +47,23 @@
     color-scheme: dark;
   }
 }
+:root[data-theme="dark"] {
+  --bg: #101214;
+  --surface: #171a1d;
+  --raised: #212428;
+  --line: rgba(236, 238, 240, 0.08);
+  --text: #eceef0;
+  --text-2: #a4aab2;
+  --muted: #868d96;
+  --go: #4cc38a;
+  --go-ink: #0b1a12;
+  --go-soft: rgba(76, 195, 138, 0.12);
+  --wait: #f0a35e;
+  --stop: #e5484d;
+  --lamp-off: rgba(236, 238, 240, 0.1);
+  --shadow: none;
+  color-scheme: dark;
+}
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -63,9 +80,9 @@ body {
 
 /* ---------- Barre du haut ---------- */
 .topbar {
-  position: sticky; top: 0; z-index: 5;
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
   background: var(--bg);
-  padding: calc(12px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+  padding: 12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
   display: flex; align-items: center; gap: 8px;
   border-bottom: 1px solid var(--line);
 }
@@ -268,3 +285,4 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
   transition: background-color 150ms var(--ease), color 150ms var(--ease);
 }
 .seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }

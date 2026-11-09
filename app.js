@@ -77,12 +77,16 @@ function defaultState() {
 }
 
 // ---------- Stockage ----------
-let state = load();
-function load() {
+// Deux modes :
+//  - « db » quand l'appli tourne en artefact claude.ai : données synchronisées entre appareils
+//    (doc gtg/config + une collection sessions + une collection measures) ;
+//  - « local » sinon (fichier ouvert dans un navigateur) : tout dans localStorage.
+let state = loadLocal();
+function loadLocal() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return migrate(JSON.parse(raw));
-  } catch (e) { console.warn('Lecture impossible', e); }
+  } catch (e) { /* stockage indisponible */ }
   return defaultState();
 }
 function migrate(s) {
@@ -95,18 +99,126 @@ function migrate(s) {
   }
   return {
     ...d, ...s,
-    profile: { ...d.profile, ...(s.profile || {}) },
+    profile: { ...d.profile, ...(s.profile || {}), measurements: Array.isArray(s.profile && s.profile.measurements) ? s.profile.measurements : [] },
     schedule: { ...d.schedule, ...(s.schedule || {}) },
     settings: { ...d.settings, ...(s.settings || {}) },
     exercises: Array.isArray(s.exercises) && s.exercises.length ? s.exercises : d.exercises,
     sessions: Array.isArray(s.sessions) ? s.sessions : [],
   };
 }
-function save() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-  catch (e) { toast('Sauvegarde impossible sur cet appareil'); }
+const clone = o => JSON.parse(JSON.stringify(o));
+const configOf = st => ({ version: st.version, exercises: st.exercises, schedule: st.schedule, taille: st.profile.taille, settings: st.settings });
+
+const persist = {
+  mode: 'local',
+  db: null,
+  ready: false,
+  queue: Promise.resolve(),
+  // Les écritures s'enchaînent une par une, pour ne jamais écrire deux fois le même document en parallèle.
+  run(fn) {
+    this.queue = this.queue.then(fn).catch(e => {
+      console.warn('Écriture refusée', e);
+      toast(e && e.code === 'quota_exceeded' ? 'Stockage plein : supprime d\'anciennes séances' : 'Enregistrement impossible pour le moment');
+    });
+    return this.queue;
+  },
+  saveLocal() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignoré */ }
+  },
+  config() {
+    if (this.mode !== 'db') return this.saveLocal();
+    const body = clone(configOf(state));
+    return this.run(() => this.db.doc('gtg/config').set(body));
+  },
+  putSession(s) {
+    if (this.mode !== 'db') return this.saveLocal();
+    const body = clone(s);
+    return this.run(() => this.db.doc('sessions/' + s.id).set(body));
+  },
+  deleteSession(id) {
+    if (this.mode !== 'db') return this.saveLocal();
+    return this.run(() => this.db.doc('sessions/' + id).delete());
+  },
+  putMeasure(m) {
+    if (this.mode !== 'db') return this.saveLocal();
+    const body = clone(m);
+    return this.run(() => this.db.doc('measures/' + m.id).set(body));
+  },
+  deleteMeasure(id) {
+    if (this.mode !== 'db') return this.saveLocal();
+    return this.run(() => this.db.doc('measures/' + id).delete());
+  },
+  // Remplace toutes les données (import d'une sauvegarde, remise à zéro).
+  replaceAll(next) {
+    if (this.mode !== 'db') { state = next; return this.saveLocal(); }
+    const db = this.db;
+    return this.run(async () => {
+      for (const name of ['sessions', 'measures']) {
+        const snap = await db.collection(name).get();
+        for (const d of snap.docs) await db.doc(name + '/' + d.id).delete();
+      }
+      await db.doc('gtg/config').set(clone(configOf(next)));
+      for (const s of next.sessions) await db.doc('sessions/' + s.id).set(clone(s));
+      for (const m of next.profile.measurements) await db.doc('measures/' + m.id).set(clone(m));
+    });
+  },
+};
+// Raccourci pour les changements de réglages (niveaux, plan, taille…).
+const save = () => persist.config();
+
+// Re-rendu après une mise à jour venue d'un autre appareil, sans casser une saisie en cours.
+let lastKey = '';
+let pendingRender = false;
+function dataKey() { return JSON.stringify([state.exercises, state.schedule, state.profile, state.settings, state.sessions]); }
+function remoteChanged() {
+  const k = dataKey();
+  if (k === lastKey) return;
+  const el = document.activeElement;
+  const typing = el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName);
+  if (typing || $('#modal').open) { pendingRender = true; return; }
+  render();
 }
-if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+document.addEventListener('focusout', () => setTimeout(() => {
+  if (!pendingRender) return;
+  const el = document.activeElement;
+  if (el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return;
+  if ($('#modal').open) return;
+  pendingRender = false; render();
+}, 0));
+
+async function connectStore() {
+  const c = window.claude;
+  if (!c || typeof c.use !== 'function') { persist.ready = true; return; }
+  const db = await c.use('db').catch(() => null);
+  if (!db) { persist.ready = true; render(); toast('Données gardées sur cet appareil seulement'); return; }
+  persist.db = db;
+  persist.mode = 'db';
+  state = defaultState();
+  const got = { config: false, sessions: false, measures: false };
+  const settle = () => {
+    if (!persist.ready && got.config && got.sessions && got.measures) { persist.ready = true; render(); return; }
+    if (persist.ready) remoteChanged();
+  };
+  const fail = e => { console.warn('Synchronisation interrompue', e); toast('Synchronisation interrompue, recharge la page'); };
+  db.doc('gtg/config').onSnapshot(snap => {
+    if (snap.exists) {
+      const d = clone(snap.data());
+      const m = migrate({ ...d, profile: { taille: d.taille || '' } });
+      state.version = m.version; state.exercises = m.exercises; state.schedule = m.schedule;
+      state.settings = m.settings; state.profile.taille = m.profile.taille;
+    }
+    got.config = true; settle();
+  }, fail);
+  db.collection('sessions').onSnapshot(q => {
+    state.sessions = q.docs.map(d => clone(d.data()));
+    got.sessions = true; settle();
+  }, fail);
+  db.collection('measures').onSnapshot(q => {
+    state.profile.measurements = q.docs.map(d => clone(d.data()));
+    got.measures = true; settle();
+  }, fail);
+}
+
 
 // ---------- Utilitaires ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -220,6 +332,13 @@ function setTitle(text, backTo) {
 function render() {
   $$('.tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab === route.tab));
   const main = $('#view');
+  if (!persist.ready) {
+    setTitle('Grease the Groove');
+    main.innerHTML = `<p class="empty">Chargement de tes données…</p>`;
+    return;
+  }
+  lastKey = dataKey();
+  pendingRender = false;
   if (route.tab === 'exercices' && route.view === 'ex') return renderExercise(main, route.id);
   if (route.tab === 'exercices') return renderExercises(main);
   if (route.tab === 'plan') return renderPlan(main);
@@ -393,7 +512,7 @@ function renderExercise(main, id) {
     const sess = { id: uid(), date: f.date.value || today(), exId: ex.id, level: selI, sets, note: f.note.value.trim() };
     if (sel.cond) sess.formOk = !!(f.formOk && f.formOk.checked);
     state.sessions.push(sess);
-    save();
+    persist.putSession(sess);
     const after = levelStatus(ex);
     const numbersOk = sets.filter(v => v >= sel.target).length >= sel.sets;
     toast(after.green && !before.green ? 'Feu vert : tu peux tester le niveau suivant'
@@ -410,7 +529,7 @@ function renderExercise(main, id) {
   $('#edit-levels').onclick = () => editLevels(ex);
   $$('[data-del]', main).forEach(b => b.onclick = () => confirmAction('Supprimer cette séance ?', 'Supprimer', () => {
     state.sessions = state.sessions.filter(s => s.id !== b.dataset.del);
-    save(); render();
+    persist.deleteSession(b.dataset.del); render();
   }));
 }
 
@@ -569,7 +688,11 @@ function editLevels(ex) {
       // (-1 si le niveau a été supprimé : la séance reste dans l'historique).
       const map = {};
       draft.levels.forEach((l, i) => { if (l._src != null) map[l._src] = i; delete l._src; });
-      state.sessions.forEach(s => { if (s.exId === ex.id) s.level = s.level in map ? map[s.level] : -1; });
+      state.sessions.forEach(s => {
+        if (s.exId !== ex.id) return;
+        const nl = s.level in map ? map[s.level] : -1;
+        if (nl !== s.level) { s.level = nl; persist.putSession(s); }
+      });
       Object.assign(ex, { name: draft.name, current: draft.current, levels: draft.levels });
       save(); closeModal(); toast('Niveaux enregistrés'); render();
     };
@@ -720,11 +843,11 @@ function renderProfile(main) {
     }
     if (!any) return toast('Saisis au moins une mesure');
     state.profile.measurements.push(m);
-    save(); toast('Mesure enregistrée'); render();
+    persist.putMeasure(m); toast('Mesure enregistrée'); render();
   };
   $$('[data-mdel]', main).forEach(b => b.onclick = () => confirmAction('Supprimer cette mesure ?', 'Supprimer', () => {
     state.profile.measurements = state.profile.measurements.filter(m => m.id !== b.dataset.mdel);
-    save(); render();
+    persist.deleteMeasure(b.dataset.mdel); render();
   }));
 }
 
@@ -732,12 +855,16 @@ function renderProfile(main) {
 function renderSettings(main) {
   setTitle('Réglages');
   const nS = state.sessions.length, nM = state.profile.measurements.length;
+  const synced = persist.mode === 'db';
+  const counts = `<span class="num">${nS}</span> séance${nS > 1 ? 's' : ''} et <span class="num">${nM}</span> mesure${nM > 1 ? 's' : ''}`;
   main.innerHTML = `
     <section>
-      <h2 class="section-title">Sauvegarde</h2>
+      <h2 class="section-title">Données</h2>
       <div class="panel" style="display:grid;gap:16px">
-        <p class="secondary">Tes données restent sur cet appareil : <span class="num">${nS}</span> séance${nS > 1 ? 's' : ''} et <span class="num">${nM}</span> mesure${nM > 1 ? 's' : ''}.
-        Exporte-les régulièrement, et utilise l'import pour passer de ton iPhone à ton PC.</p>
+        <p class="secondary">${synced
+          ? `Tes données (${counts}) sont enregistrées dans ton compte Claude et synchronisées entre ton iPhone et ton PC.
+             L'export garde une copie de secours. L'import reprend une sauvegarde, par exemple celle de l'ancienne version de l'appli.`
+          : `Tes données (${counts}) restent sur cet appareil. Exporte-les régulièrement, et utilise l'import pour les transférer.`}</p>
         <div class="grid2">
           <button class="btn primary" id="export">Exporter</button>
           <label class="btn">Importer<input type="file" id="import" accept="application/json,.json" hidden></label>
@@ -745,14 +872,9 @@ function renderSettings(main) {
       </div>
     </section>
     <section>
-      <h2 class="section-title">Installer sur iPhone</h2>
-      <div class="panel"><p class="secondary">Dans Safari, touche Partager puis « Sur l'écran d'accueil ». L'appli s'ouvre alors en plein écran et marche hors ligne.
-      Ouvre-la toujours depuis cette icône : c'est là que tes données sont conservées.</p></div>
-    </section>
-    <section>
       <h2 class="section-title">Réinitialiser</h2>
       <div class="panel" style="display:grid;gap:16px">
-        <p class="secondary">Efface les séances, les mesures et les niveaux personnalisés de cet appareil. Pense à exporter avant.</p>
+        <p class="secondary">${synced ? 'Efface les séances, les mesures et les niveaux personnalisés, sur tous tes appareils' : 'Efface les séances, les mesures et les niveaux personnalisés de cet appareil'}. Pense à exporter avant.</p>
         <div><button class="btn" id="reset" style="color:var(--stop)">Tout effacer</button></div>
       </div>
     </section>
@@ -761,6 +883,12 @@ function renderSettings(main) {
   $('#export').onclick = async () => {
     const json = JSON.stringify({ app: 'grease-the-groove', exportedAt: new Date().toISOString(), data: state }, null, 2);
     const name = `gtg-sauvegarde-${today()}.json`;
+    const dl = window.claude && typeof window.claude.use === 'function' ? await window.claude.use('downloads').catch(() => null) : null;
+    if (dl) {
+      try { await dl.save({ filename: name, data: json }); toast('Sauvegarde exportée'); }
+      catch (e) { if (e && e.code !== 'declined') toast('Export impossible ici'); }
+      return;
+    }
     const file = new File([json], name, { type: 'application/json' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try { await navigator.share({ files: [file], title: name }); return; }
@@ -780,17 +908,24 @@ function renderSettings(main) {
       const data = parsed.data || parsed;
       if (!Array.isArray(data.exercises)) throw new Error('format');
       confirmAction('Remplacer les données de cet appareil par celles du fichier ?', 'Remplacer', () => {
-        state = migrate(data); save(); toast('Données importées'); go('exercices');
+        state = migrate(data);
+        persist.replaceAll(state).then(() => toast('Données importées'));
+        go('exercices');
       });
     } catch (err) { toast("Ce fichier n'est pas une sauvegarde de l'appli"); }
   };
-  $('#reset').onclick = () => confirmAction('Effacer toutes les données de cet appareil ?', 'Tout effacer', () => {
-    state = defaultState(); save(); toast('Données effacées'); go('exercices');
+  $('#reset').onclick = () => confirmAction(synced ? 'Effacer toutes tes données ?' : 'Effacer toutes les données de cet appareil ?', 'Tout effacer', () => {
+    state = defaultState();
+    persist.replaceAll(state).then(() => toast('Données effacées'));
+    go('exercices');
   });
 }
 
 // ---------- Démarrage ----------
+if (!window.claude) persist.ready = true;
 render();
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+connectStore();
+// Hors ligne uniquement pour la version hébergée (GitHub Pages) : un artefact n'a pas de service worker.
+if (!window.claude && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }

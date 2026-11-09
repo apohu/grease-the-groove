@@ -6,9 +6,14 @@ Petite appli web (PWA) de suivi de progression en callisthénie, pensée pour iP
 - Feu vert : quand les N dernières séances au niveau actuel atteignent le critère (X séries de Y rép. ou secondes), l'appli propose de passer au niveau suivant.
 - Profil : taille, poids et tours (bras, poitrine, taille, hanches, cuisse, mollet) avec historique.
 - Plan de la semaine généré à partir des minutes disponibles chaque jour.
-- Données stockées uniquement sur l'appareil (localStorage), avec export/import JSON.
+- Version principale : artefact claude.ai, données synchronisées entre appareils (base de l'artefact).
+- Version hébergée (GitHub Pages) : hors ligne, données sur l'appareil (localStorage). Export/import JSON dans les deux cas.
 
 Les niveaux fournis par défaut sont génériques : ils sont à remplacer par ceux de « Mon programme de callisthénie » (Brieuc Le Dantec) depuis l'écran « Modifier les niveaux ».
+
+## Version artefact claude.ai
+
+`python3 tools/build-artifact.py` assemble `dist/artifact.html` (un seul fichier), publié comme artefact claude.ai avec les capacités `db` (lecture et écriture réservées au propriétaire) et `downloads`.
 
 ## Utilisation
 
