@@ -290,12 +290,22 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
 .ladder li.bis .rung { font-size: 8.5px; letter-spacing: -0.02em; }
+/* Grease the Groove : séries du jour */
+.groove { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.groove:first-child { border-top: 0; }
+.groove .name { font-weight: 500; }
+.groove-btns { display: flex; align-items: center; gap: 4px; flex: none; }
+.groove-btns .btn { gap: 4px; padding: 0 12px; }
+.test-row { display: grid; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.day select { width: auto; min-width: 128px; }
+.seg button { min-width: 0; }
+.size-link { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
 </style>
 <header class="topbar"><h1 id="view-title">Exercices</h1></header>
 <main id="view" aria-live="polite"></main>
 <nav class="tabbar" aria-label="Navigation">
   <button data-tab="exercices" data-icon="dumbbell" class="active"><span>Exercices</span></button>
-  <button data-tab="plan" data-icon="calendar"><span>Plan</span></button>
+  <button data-tab="plan" data-icon="calendar"><span>Groove</span></button>
   <button data-tab="profil" data-icon="ruler"><span>Profil</span></button>
   <button data-tab="reglages" data-icon="sliders"><span>Réglages</span></button>
 </nav>
@@ -307,7 +317,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.4.1';
+const APP_VERSION = '0.5.0';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -337,6 +347,7 @@ const ICONS = {
   up: '<path d="m18 15-6-6-6 6"/>',
   down: '<path d="m6 9 6 6 6-6"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  minus: '<path d="M5 12h14"/>',
 };
 const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 
@@ -410,6 +421,18 @@ function defaultState() {
     profile: { taille: '', measurements: [] }, // measurements: { id, date, poids, bras, ... }
     schedule: { lun: 20, mar: 0, mer: 20, jeu: 0, ven: 20, sam: 30, dim: 0 },
     settings: { levelsReviewed: false },
+    gtg: defaultGtg(),
+    days: {},              // 'AAAA-MM-JJ' -> { date, type?, done: { exId: { sets, reps, level } } }
+  };
+}
+function defaultGtg() {
+  return {
+    rhythm: 120,           // minutes entre deux séries les jours à la maison
+    split: false,          // false : les 6 exercices chaque jour ; true : 3 + 3 en alternance
+    week: { lun: 'maison', mar: 'agence', mer: 'maison', jeu: 'agence', ven: 'maison', sam: 'chargee', dim: 'chargee' },
+    sizes: {},             // taille de série réglée à la main : exId -> { i, reps, testId }
+    film: false,           // rappel « filme-toi » (désactivé par défaut)
+    startedAt: null,
   };
 }
 
@@ -444,12 +467,14 @@ function migrate(s) {
     profile: { ...d.profile, ...(s.profile || {}), measurements: Array.isArray(s.profile && s.profile.measurements) ? s.profile.measurements : [] },
     schedule: { ...d.schedule, ...(s.schedule || {}) },
     settings: { ...d.settings, ...(s.settings || {}) },
+    gtg: { ...d.gtg, ...(s.gtg || {}), week: { ...d.gtg.week, ...((s.gtg && s.gtg.week) || {}) }, sizes: { ...((s.gtg && s.gtg.sizes) || {}) } },
+    days: s.days && typeof s.days === 'object' ? s.days : {},
     exercises: Array.isArray(s.exercises) && s.exercises.length ? s.exercises : d.exercises,
     sessions: Array.isArray(s.sessions) ? s.sessions : [],
   };
 }
 const clone = o => JSON.parse(JSON.stringify(o));
-const configOf = st => ({ version: st.version, exercises: st.exercises, schedule: st.schedule, taille: st.profile.taille, settings: st.settings });
+const configOf = st => ({ version: st.version, exercises: st.exercises, schedule: st.schedule, taille: st.profile.taille, settings: st.settings, gtg: st.gtg });
 
 const persist = {
   mode: 'local',
@@ -490,18 +515,24 @@ const persist = {
     if (this.mode !== 'db') return this.saveLocal();
     return this.run(() => this.db.doc('measures/' + id).delete());
   },
+  putDay(d) {
+    if (this.mode !== 'db') return this.saveLocal();
+    const body = clone(d);
+    return this.run(() => this.db.doc('days/' + d.date).set(body));
+  },
   // Remplace toutes les données (import d'une sauvegarde, remise à zéro).
   replaceAll(next) {
     if (this.mode !== 'db') { state = next; return this.saveLocal(); }
     const db = this.db;
     return this.run(async () => {
-      for (const name of ['sessions', 'measures']) {
+      for (const name of ['sessions', 'measures', 'days']) {
         const snap = await db.collection(name).get();
         for (const d of snap.docs) await db.doc(name + '/' + d.id).delete();
       }
       await db.doc('gtg/config').set(clone(configOf(next)));
       for (const s of next.sessions) await db.doc('sessions/' + s.id).set(clone(s));
       for (const m of next.profile.measurements) await db.doc('measures/' + m.id).set(clone(m));
+      for (const d of Object.values(next.days || {})) await db.doc('days/' + d.date).set(clone(d));
     });
   },
 };
@@ -511,7 +542,7 @@ const save = () => persist.config();
 // Re-rendu après une mise à jour venue d'un autre appareil, sans casser une saisie en cours.
 let lastKey = '';
 let pendingRender = false;
-function dataKey() { return JSON.stringify([state.exercises, state.schedule, state.profile, state.settings, state.sessions]); }
+function dataKey() { return JSON.stringify([state.exercises, state.schedule, state.profile, state.settings, state.sessions, state.gtg, state.days]); }
 function remoteChanged() {
   const k = dataKey();
   if (k === lastKey) return;
@@ -536,9 +567,9 @@ async function connectStore() {
   persist.db = db;
   persist.mode = 'db';
   state = defaultState();
-  const got = { config: false, sessions: false, measures: false };
+  const got = { config: false, sessions: false, measures: false, days: false };
   const settle = () => {
-    if (!persist.ready && got.config && got.sessions && got.measures) { persist.ready = true; render(); return; }
+    if (!persist.ready && got.config && got.sessions && got.measures && got.days) { persist.ready = true; render(); return; }
     if (persist.ready) remoteChanged();
   };
   const fail = e => { console.warn('Synchronisation interrompue', e); toast('Synchronisation interrompue, recharge la page'); };
@@ -547,7 +578,7 @@ async function connectStore() {
       const d = clone(snap.data());
       const m = migrate({ ...d, profile: { taille: d.taille || '' } });
       state.version = m.version; state.exercises = m.exercises; state.schedule = m.schedule;
-      state.settings = m.settings; state.profile.taille = m.profile.taille;
+      state.settings = m.settings; state.profile.taille = m.profile.taille; state.gtg = m.gtg;
     }
     got.config = true; settle();
   }, fail);
@@ -558,6 +589,10 @@ async function connectStore() {
   db.collection('measures').onSnapshot(q => {
     state.profile.measurements = q.docs.map(d => clone(d.data()));
     got.measures = true; settle();
+  }, fail);
+  db.collection('days').onSnapshot(q => {
+    state.days = Object.fromEntries(q.docs.map(d => { const x = clone(d.data()); return [x.date, x]; }));
+    got.days = true; settle();
   }, fail);
 }
 
@@ -778,7 +813,7 @@ function renderExercise(main, id) {
   }
 
   html += `<section>
-    <h2 class="section-title">Enregistrer une séance</h2>
+    <h2 class="section-title">Noter un test de max</h2>
     <form class="panel form" id="log-form">
       ${idx.length > 1 ? `<div class="field"><span>Exercice</span><div class="seg" role="radiogroup">${idx.map(i =>
         `<button type="button" role="radio" aria-checked="${i === selI}" class="${i === selI ? 'on' : ''}" data-pick="${i}">${esc(ex.levels[i].name)}</button>`).join('')}</div></div>` : ''}
@@ -835,7 +870,7 @@ function renderExercise(main, id) {
             ${s.note ? `<div class="small muted">${esc(s.note)}</div>` : ''}</td>
           <td><button class="icon-btn" data-del="${esc(s.id)}" aria-label="Supprimer la séance du ${fmtDate(s.date)}">${icon('x')}</button></td>
         </tr>`;
-      }).join('')}</tbody></table></div>` : `<p class="empty">Aucune séance pour l'instant.</p>`}
+      }).join('')}</tbody></table></div>` : `<p class="empty">Aucun test pour l'instant.</p>`}
     </div>
   </section>`;
 
@@ -856,7 +891,7 @@ function renderExercise(main, id) {
     if (!sets.length) return toast('Saisis ton résultat');
     const f = e.target;
     const before = levelStatus(ex);
-    const sess = { id: uid(), date: f.date.value || today(), exId: ex.id, level: selI, sets, note: f.note.value.trim() };
+    const sess = { id: uid(), date: f.date.value || today(), exId: ex.id, level: selI, sets, note: f.note.value.trim(), test: true };
     if (sel.cond) sess.formOk = !!(f.formOk && f.formOk.checked);
     state.sessions.push(sess);
     persist.putSession(sess);
@@ -864,7 +899,7 @@ function renderExercise(main, id) {
     const numbersOk = sets.filter(v => v >= sel.target).length >= sel.sets;
     toast(after.green && !before.green ? 'Feu vert : tu peux tester le niveau suivant'
       : numbersOk && sel.cond && !sess.formOk ? 'Enregistré, non compté : forme non cochée'
-      : sessionValid(sess, sel) ? `Validé : ${sel.name}` : 'Séance enregistrée');
+      : sessionValid(sess, sel) ? `Validé : ${sel.name}` : 'Test enregistré');
     logChoice[ex.id] = undefined;
     render();
   };
@@ -886,7 +921,7 @@ function chartForLevel(ex, i) {
   const u = unitLabel(lvUnit(ex, l));
   const list = atLevel(ex, i);
   if (list.length < 2) {
-    return `<p class="empty">La courbe apparaîtra après deux séances. La ligne verte marquera l'objectif : ${l.target} ${u}</p>`;
+    return `<p class="empty">La courbe apparaîtra après deux tests. La ligne verte marquera l'objectif : ${l.target} ${u}</p>`;
   }
   return lineChart(list.map(s => ({ x: s.date, y: Math.max(...s.sets) })), {
     target: l.target, unit: u, label: `Meilleur résultat par séance, objectif ${l.target} ${u}`,
@@ -1051,71 +1086,362 @@ function editLevels(ex) {
   draw();
 }
 
-// ---------- Vue : plan hebdomadaire ----------
-const WARMUP = 5;     // minutes
-const BLOCK = 5;      // minutes par exercice dans une séance
-function buildPlan() {
-  const count = Object.fromEntries(state.exercises.map(e => [e.id, 0]));
-  let cursor = 0;
-  return DAYS.map(([key, label]) => {
-    const min = Math.max(0, parseInt(state.schedule[key], 10) || 0);
-    if (!min) return { key, label, min, items: [], kind: 'repos' };
-    let n, kind;
-    if (min >= WARMUP + BLOCK) { n = Math.floor((min - WARMUP) / BLOCK); kind = 'seance'; }
-    else { n = Math.max(1, Math.floor(min / 5)); kind = 'gtg'; }
-    n = Math.min(n, state.exercises.length);
-    // Choix : les exercices les moins travaillés jusqu'ici dans la semaine, en tournant.
-    const order = state.exercises.map((e, i) => ({ e, i: (i - cursor + state.exercises.length) % state.exercises.length }))
-      .sort((a, b) => count[a.e.id] - count[b.e.id] || a.i - b.i).slice(0, n).map(o => o.e);
-    order.forEach(e => count[e.id]++);
-    cursor = (cursor + n) % state.exercises.length;
-    return { key, label, min, items: order, kind };
-  });
+// ---------- Grease the Groove ----------
+// Programme « bis » du livre : des séries faciles (environ la moitié du max), souvent, sans fatigue.
+// Arthur préfère un objectif par semaine à un planning fixe : l'objectif hebdomadaire de chaque
+// exercice se calcule sur sa semaine type, et la part du jour dépend du type de journée.
+const DAY_TYPES = {
+  maison: { label: 'Maison', hint: 'Une série à chaque pause' },
+  agence: { label: 'Agence', hint: 'Fenêtre le matin et le soir' },
+  chargee: { label: 'Chargée', hint: 'Quelques séries quand tu peux' },
+  repos: { label: 'Repos', hint: 'Pas de séries aujourd\'hui' },
+};
+const RHYTHMS = [[120, '2 h'], [60, '1 h'], [30, '30 min']];
+// Créneaux par jour : une journée maison de 9 h à 17 h ; agence = 2 créneaux le matin + 2 le soir
+// (une série toutes les 10-15 min) ; chargée = 2 créneaux quand tu peux.
+function slotsFor(type) {
+  if (type === 'maison') return Math.round(480 / (state.gtg.rhythm || 120));
+  return { agence: 4, chargee: 2, repos: 0 }[type] ?? 0;
 }
-function grooveReps(ex) {
-  const l = ex.levels[ex.current];
-  if (!l) return '';
-  return `${Math.max(1, Math.round(l.target * 0.6))} ${unitLabel(lvUnit(ex, l))}${l.perSide ? ' par jambe' : ''}`;
+const PER_SLOT = 3; // exercices par créneau, comme dans les exemples du livre
+const LIGHT = ['gainage']; // le gainage revient moins souvent : une fois par jour au plus
+
+function isoOf(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function weekDates(iso = today()) {
+  const d = new Date(iso + 'T12:00:00');
+  const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return Array.from({ length: 7 }, (_, k) => { const x = new Date(mon); x.setDate(mon.getDate() + k); return isoOf(x); });
 }
+const dayKey = iso => DAYS[(new Date(iso + 'T12:00:00').getDay() + 6) % 7][0];
+const dayDoc = iso => state.days[iso] || { date: iso, done: {} };
+const typeOf = iso => dayDoc(iso).type || state.gtg.week[dayKey(iso)] || 'chargee';
+
+// Groupes de l'alternance 3 + 3 (choix proposé par Claude) : les trois premiers exercices, puis les trois autres.
+const groupOf = ex => (state.exercises.indexOf(ex) < Math.ceil(state.exercises.length / 2) ? 0 : 1);
+
+// Meilleur résultat d'une séance de test (par jambe : la moins bonne des deux).
+function bestOf(s, l) {
+  if (!s || !s.sets.length) return 0;
+  if (l && l.perSide) {
+    const g = s.sets.filter((_, i) => i % 2 === 0), d = s.sets.filter((_, i) => i % 2 === 1);
+    return d.length ? Math.min(Math.max(...g), Math.max(...d)) : Math.max(...g);
+  }
+  return Math.max(...s.sets);
+}
+// Niveau travaillé : le premier niveau obligatoire pas encore validé de l'étape, sinon sa base.
+function grooveLevel(ex) {
+  if (!ex.levels[ex.current]) return -1;
+  const idx = stepIdx(ex, ex.current).filter(i => !(ex.levels[i].bis && ex.levels[i].optional));
+  return idx.find(i => levelState(ex, i) !== 'go') ?? idx[0];
+}
+// Niveau précédent : début de l'étape d'avant, en sautant les niveaux optionnels.
+function prevLevel(ex, i) {
+  const starts = stepStarts(ex).filter(k => k < stepRange(ex, i)[0] && !ex.levels[k].optional);
+  return starts.length ? starts[starts.length - 1] : -1;
+}
+// Série du jour, d'après le livre : environ la moitié du max ; si le max au niveau actuel est
+// encore très faible, on fait des séries du niveau précédent (ex. 2 négatives -> séries de 10 australiennes).
+function grooveSet(ex) {
+  const i = grooveLevel(ex);
+  if (i < 0) return { i, reps: 0, basis: 'none' };
+  const l = ex.levels[i];
+  const tests = atLevel(ex, i);
+  const t = tests[tests.length - 1];
+  const p = prevLevel(ex, i);
+  const fromPrev = () => ({ i: p, reps: Math.max(1, Math.round(ex.levels[p].target * 2 / 3)) });
+  let res;
+  if (t) {
+    const max = bestOf(t, l);
+    res = max < l.target * 0.4 && p >= 0
+      ? { ...fromPrev(), basis: 'prev', max, testI: i, test: t }
+      : { i, reps: Math.max(1, Math.floor(max / 2)), basis: 'max', max, testI: i, test: t };
+  } else {
+    res = p >= 0 ? { ...fromPrev(), basis: 'untested', testI: i } : { i, reps: 0, basis: 'none', testI: i };
+  }
+  // Réglage manuel (autoexpérimentation) : valable tant qu'il n'y a pas de nouveau test.
+  const c = state.gtg.sizes[ex.id];
+  if (c && res.reps && c.i === res.i && c.testId === (res.test ? res.test.id : null)) { res.reps = c.reps; res.custom = true; }
+  return res;
+}
+
+// Séries prévues pour un exercice un jour donné, à type de journée fixé.
+function plannedSets(ex, iso, type = typeOf(iso)) {
+  const slots = slotsFor(type);
+  if (!slots) return 0;
+  if (LIGHT.includes(ex.id)) return 1;
+  if (state.gtg.split) return activeGroup(iso) === groupOf(ex) ? slots : 0;
+  return Math.ceil(slots * PER_SLOT / Math.max(1, state.exercises.length));
+}
+// Alternance 3 + 3 : le groupe change à chaque journée d'entraînement de la semaine.
+function activeGroup(iso) {
+  const n = weekDates(iso).filter(d => d < iso && slotsFor(typeOf(d)) > 0).length;
+  return n % 2;
+}
+// Objectif de la semaine : la semaine type (sans les changements du jour).
+function weekGoal(ex, iso = today()) {
+  return weekDates(iso).reduce((t, d) => t + plannedSets(ex, d, state.gtg.week[dayKey(d)] || 'chargee'), 0);
+}
+const doneOn = (ex, iso) => (dayDoc(iso).done[ex.id] || { sets: 0, reps: 0 });
+function weekDone(ex, iso = today()) {
+  return weekDates(iso).reduce((t, d) => {
+    const x = doneOn(ex, d);
+    return { sets: t.sets + (x.sets || 0), reps: t.reps + (x.reps || 0) };
+  }, { sets: 0, reps: 0 });
+}
+// Part du jour : ce qui reste de l'objectif de la semaine, réparti sur les jours restants
+// au prorata de leurs créneaux. Ce qui n'est pas fait un jour se reporte sur les suivants.
+function todayShare(ex, iso = today()) {
+  const days = weekDates(iso);
+  const before = days.filter(d => d < iso).reduce((t, d) => t + (doneOn(ex, d).sets || 0), 0);
+  const left = Math.max(0, weekGoal(ex, iso) - before);
+  const mine = plannedSets(ex, iso);
+  const rest = days.filter(d => d >= iso).reduce((t, d) => t + plannedSets(ex, d), 0);
+  if (!mine || !rest) return 0;
+  const cap = LIGHT.includes(ex.id) ? 1 : slotsFor(typeOf(iso));
+  return Math.min(cap, Math.ceil(left * mine / rest));
+}
+
+function daysBetween(a, b) { return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 864e5); }
+function lastTestDate(ex) {
+  const list = state.sessions.filter(s => s.exId === ex.id).map(s => s.date).sort();
+  return list[list.length - 1] || null;
+}
+// Les 4 temps du livre, selon l'ancienneté du programme.
+function phaseNotice() {
+  const start = state.gtg.startedAt;
+  if (!start) return null;
+  const w = Math.floor(daysBetween(start, today()) / 7);
+  if (w < 2) return { title: 'Semaines 1 et 2 : fixe ton rythme', text: 'Garde un rythme que tu tiens sans effort. Chaque répétition doit être parfaite : mieux vaut une série de moins qu\'une série bâclée.' };
+  if (w < 4) return { title: 'Semaines 3 et 4 : installe l\'habitude', text: 'Le rythme devient automatique. Ne monte pas la fréquence au point de sentir la fatigue.' };
+  const ideas = ['change la fréquence (plus de séries un jour, moins un autre)', 'change le repos entre les séries', 'change le nombre de répétitions par série', 'teste une progression plus dure sur une ou deux séries'];
+  return { title: 'Varie', text: `L'habitude est là : ajoute des fluctuations. Idée de la semaine : ${ideas[w % ideas.length]}.` };
+}
+
+let planDate = null; // jour affiché (aujourd'hui par défaut)
 function renderPlan(main) {
-  setTitle('Plan de la semaine');
-  const total = DAYS.reduce((t, [k]) => t + (parseInt(state.schedule[k], 10) || 0), 0);
-  const plan = buildPlan();
-  const counts = Object.fromEntries(state.exercises.map(e => [e.id, 0]));
-  plan.forEach(d => d.items.forEach(e => counts[e.id]++));
-  const missing = state.exercises.filter(e => !counts[e.id]);
+  if (route.view === 'test') return renderTest(main);
+  const iso = planDate || today();
+  const isToday = iso === today();
+  setTitle(isToday ? 'Aujourd\'hui' : fmtLong(iso), isToday ? null : () => { planDate = null; render(); });
+  const type = typeOf(iso);
+  const doc = dayDoc(iso);
+  const exs = state.exercises;
+  const sets = Object.fromEntries(exs.map(e => [e.id, grooveSet(e)]));
+  const neverTested = exs.every(e => !state.sessions.some(s => s.exId === e.id));
+  const todayList = exs.filter(e => todayShare(e, iso) > 0 || (doc.done[e.id] && doc.done[e.id].sets));
+  const ph = phaseNotice();
 
-  main.innerHTML = `
-    <section>
-      <h2 class="section-title"><span>La semaine</span><span class="num">${total} min</span></h2>
-      <div class="panel list">${plan.map(d => `
-        <div class="plan-day${d.kind === 'repos' ? ' rest' : ''}">
-          <div class="row"><span class="dname grow" style="font-weight:500">${d.label}</span>
-            <span class="small muted">${d.kind === 'repos' ? 'Repos' : d.kind === 'gtg' ? 'Séries dans la journée' : `Échauffement ${WARMUP} min`}</span></div>
-          ${d.items.length ? `<ul>${d.items.map(e => `<li><span>${esc(e.name)}</span>
-            <span class="small muted">${esc(e.levels[e.current]?.name || '')}</span>
-            <span class="num">${grooveReps(e)}</span></li>`).join('')}</ul>` : ''}
-        </div>`).join('')}
+  let html = '';
+  if (neverTested) {
+    html += `<div class="notice"><p><strong>Commence par la séance test.</strong> Ton max sur chaque exercice place ton niveau et règle la taille de tes séries.</p>
+      <div><button class="btn sm primary" data-go-test>Faire la séance test</button></div></div>`;
+  } else if (ph) {
+    html += `<div class="notice"><p><strong>${esc(ph.title)}.</strong> ${esc(ph.text)}</p></div>`;
+  }
+
+  html += `<section>
+    <h2 class="section-title"><span>${isToday ? 'Ma journée' : 'Journée'}</span><span>${esc(DAY_TYPES[type].hint)}</span></h2>
+    <div class="seg" role="radiogroup" aria-label="Type de journée">${Object.entries(DAY_TYPES).map(([k, t]) =>
+      `<button type="button" role="radio" aria-checked="${k === type}" class="${k === type ? 'on' : ''}" data-type="${k}">${t.label}</button>`).join('')}</div>
+  </section>`;
+
+  html += `<section>
+    <h2 class="section-title"><span>Séries du jour</span><span class="num">${slotsFor(type) ? `${slotsFor(type)} créneau${slotsFor(type) > 1 ? 'x' : ''}` : ''}</span></h2>
+    <div class="panel list">${todayList.length ? todayList.map(e => {
+      const g = sets[e.id];
+      const l = e.levels[g.i];
+      const u = l ? lvUnit(e, l) : e.unit;
+      const share = todayShare(e, iso);
+      const d = doneOn(e, iso);
+      const left = Math.max(0, share - (d.sets || 0));
+      const due = g.basis !== 'none' && g.testI != null && (g.basis === 'untested' || !g.test || daysBetween(g.test.date, today()) >= 14);
+      return `<div class="groove" data-ex="${esc(e.id)}">
+        <div class="grow">
+          <div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(e.name)}</span>
+            <span class="num small ${left ? 'muted' : 'ok'}">${d.sets || 0}/${share}</span></div>
+          ${g.reps ? `<div class="small secondary"><button type="button" class="size-link" data-size="${esc(e.id)}" aria-label="Régler la taille des séries de ${esc(e.name)}">Séries de <span class="num">${g.reps} ${unitLabel(u)}${l.perSide ? ' par jambe' : ''}</span>${g.custom ? ' (réglée)' : ''}</button> · ${esc(l.name)}</div>`
+            : `<div class="small secondary">Fais d'abord un test de ton max.</div>`}
+          ${g.basis === 'prev' ? `<div class="small muted">Ton max en ${esc(e.levels[g.testI].name.toLowerCase())} est encore faible (${g.max}) : on consolide le niveau d'avant.</div>` : ''}
+          ${due ? `<div class="small" style="color:var(--wait)">${g.basis === 'untested' ? `Teste ton max en ${esc(e.levels[g.testI].name.toLowerCase())}` : 'Refais un test de max'} quand tu es reposé.</div>` : ''}
+        </div>
+        ${g.reps ? `<div class="groove-btns">
+          <button class="icon-btn" data-minus="${esc(e.id)}" ${d.sets ? '' : 'disabled'} aria-label="Retirer une série de ${esc(e.name)}">${icon('minus')}</button>
+          <button class="btn sm ${left ? 'primary' : ''}" data-plus="${esc(e.id)}" aria-label="Ajouter une série de ${esc(e.name)}">${icon('plus')} Série</button>
+        </div>` : `<button class="btn sm" data-open="${esc(e.id)}">Tester</button>`}
+      </div>`;
+    }).join('') : `<p class="empty" style="padding:16px 0">${type === 'repos' ? 'Jour de repos.' : 'Objectif de la semaine déjà atteint. Tu peux quand même ajouter des séries depuis le tableau ci-dessous.'}</p>`}</div>
+    <p class="small muted" style="padding:0 4px">Pas d'échauffement. Arrête-toi bien avant la fatigue : chaque répétition doit être parfaite.</p>
+  </section>`;
+
+  const days = weekDates(iso);
+  html += `<section>
+    <h2 class="section-title"><span>La semaine</span><span class="num">${fmtDate(days[0])} au ${fmtDate(days[6])}</span></h2>
+    <div class="panel list"><div class="table-wrap"><table class="hist">
+      <thead><tr><th>Exercice</th><th>Séries</th><th>Volume</th></tr></thead><tbody>
+      ${exs.map(e => {
+        const w = weekDone(e, iso), goal = weekGoal(e, iso), g = sets[e.id];
+        const l = e.levels[g.i];
+        const u = l ? unitLabel(lvUnit(e, l)) : '';
+        return `<tr><td>${esc(e.name)}${l ? `<div class="small muted">${esc(l.name)}</div>` : ''}</td>
+          <td class="num ${w.sets >= goal && goal ? 'ok' : ''}">${w.sets}/${goal}</td>
+          <td class="num">${w.reps} ${u}</td></tr>`;
+      }).join('')}</tbody></table></div></div>
+    <p class="small muted" style="padding:0 4px">Le volume compte les répétitions (ou les secondes) faites en séries. Pour ajuster la taille d'une série, touche « Séries de… » plus haut.</p>
+    <div class="grid2"><button class="btn" data-go-test>Séance test</button><button class="btn" id="day-prev">${icon('chevronLeft')} Jour précédent</button></div>
+    ${!isToday ? `<button class="btn block" id="day-today">Revenir à aujourd'hui</button>` : ''}
+  </section>`;
+
+  if (state.gtg.film) {
+    const w = state.gtg.startedAt ? Math.floor(daysBetween(state.gtg.startedAt, today()) / 7) : 0;
+    if (w && w % 4 === 0) html += `<div class="notice"><p><strong>Cette semaine, filme une série.</strong> Le livre conseille de te filmer de temps en temps pour vérifier ta forme. Personne n'a besoin de voir la vidéo.</p></div>`;
+  }
+
+  html += `<section>
+    <h2 class="section-title">Mon rythme</h2>
+    <div class="panel form">
+      <div class="field"><span>À la maison, une série toutes les…</span><div class="seg" role="radiogroup">${RHYTHMS.map(([v, t]) =>
+        `<button type="button" role="radio" aria-checked="${state.gtg.rhythm === v}" class="${state.gtg.rhythm === v ? 'on' : ''}" data-rhythm="${v}">${t}</button>`).join('')}</div></div>
+      <div class="field"><span>Exercices</span><div class="seg" role="radiogroup">
+        <button type="button" role="radio" aria-checked="${!state.gtg.split}" class="${!state.gtg.split ? 'on' : ''}" data-split="0">Les 6 chaque jour</button>
+        <button type="button" role="radio" aria-checked="${!!state.gtg.split}" class="${state.gtg.split ? 'on' : ''}" data-split="1">3 + 3 en alternance</button></div>
+        ${state.gtg.split ? `<span class="small muted">Un jour ${esc(exs.filter(e => groupOf(e) === 0).map(e => e.name).join(', '))}, le suivant ${esc(exs.filter(e => groupOf(e) === 1).map(e => e.name).join(', '))}.</span>` : ''}</div>
+      <div class="field"><span>Ma semaine type</span>
+        <div class="list">${DAYS.map(([k, label]) => `<label class="day"><span class="dname">${label}</span>
+          <select data-week="${k}" id="week-${k}" aria-label="Type de journée le ${label}">${Object.entries(DAY_TYPES).map(([t, d]) =>
+            `<option value="${t}" ${state.gtg.week[k] === t ? 'selected' : ''}>${d.label}</option>`).join('')}</select></label>`).join('')}</div></div>
+      <label class="check"><input type="checkbox" id="gtg-film" ${state.gtg.film ? 'checked' : ''}><span>Me rappeler de me filmer de temps en temps</span></label>
+      <p class="small muted">L'objectif de la semaine se calcule sur la semaine type. Quand un jour change (échange de jours, mise en prod, week-end chargé), change seulement le type du jour en haut : le reste se répartit sur les jours suivants.</p>
+    </div>
+  </section>`;
+
+  main.innerHTML = html;
+
+  const putDay = d => { state.days[d.date] = d; persist.putDay(d); };
+  $$('[data-type]', main).forEach(b => b.onclick = () => {
+    const d = clone(dayDoc(iso));
+    if (b.dataset.type === state.gtg.week[dayKey(iso)]) delete d.type; else d.type = b.dataset.type;
+    putDay(d); render();
+  });
+  $$('[data-plus]', main).forEach(b => b.onclick = () => {
+    const e = exById(b.dataset.plus), g = sets[e.id];
+    const d = clone(dayDoc(iso));
+    const x = d.done[e.id] || { sets: 0, reps: 0 };
+    d.done[e.id] = { sets: x.sets + 1, reps: x.reps + g.reps, level: g.i };
+    putDay(d);
+    if (!state.gtg.startedAt) { state.gtg.startedAt = iso; save(); }
+    const share = todayShare(e, iso);
+    toast(d.done[e.id].sets === share ? `${e.name} : séries du jour faites` : `${e.name} : ${d.done[e.id].sets}/${share}`);
+    render();
+  });
+  $$('[data-minus]', main).forEach(b => b.onclick = () => {
+    const e = exById(b.dataset.minus), g = sets[e.id];
+    const d = clone(dayDoc(iso));
+    const x = d.done[e.id];
+    if (!x || !x.sets) return;
+    const per = x.sets ? Math.round(x.reps / x.sets) : g.reps;
+    d.done[e.id] = { ...x, sets: x.sets - 1, reps: Math.max(0, x.reps - per) };
+    putDay(d); render();
+  });
+  $$('[data-open]', main).forEach(b => b.onclick = () => go('exercices', 'ex', b.dataset.open));
+  $$('[data-go-test]', main).forEach(b => b.onclick = () => go('plan', 'test'));
+  $$('[data-size]', main).forEach(b => b.onclick = () => editSize(exById(b.dataset.size), sets[b.dataset.size]));
+  $('#day-prev').onclick = () => { const x = new Date(iso + 'T12:00:00'); x.setDate(x.getDate() - 1); planDate = isoOf(x); render(); };
+  const t = $('#day-today'); if (t) t.onclick = () => { planDate = null; render(); };
+  $$('[data-rhythm]', main).forEach(b => b.onclick = () => { state.gtg.rhythm = +b.dataset.rhythm; save(); render(); });
+  $$('[data-split]', main).forEach(b => b.onclick = () => { state.gtg.split = b.dataset.split === '1'; save(); render(); });
+  $$('[data-week]', main).forEach(s => s.onchange = () => { state.gtg.week[s.dataset.week] = s.value; save(); render(); });
+  $('#gtg-film').onchange = e => { state.gtg.film = e.target.checked; save(); render(); };
+}
+function fmtLong(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  return `${DAYS[(d.getDay() + 6) % 7][1]} ${d.getDate()}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function editSize(ex, g) {
+  const l = ex.levels[g.i];
+  const u = unitLong(lvUnit(ex, l));
+  let v = g.reps;
+  const draw = () => {
+    openModal(`<h2>Séries de ${esc(ex.name.toLowerCase())}</h2>
+      <p class="secondary">${esc(l.name)}, en ${u}${l.perSide ? ' par jambe' : ''}.
+      ${g.max != null ? `Ton dernier max : <span class="num">${g.max}</span>${g.basis === 'prev' ? ` en ${esc(ex.levels[g.testI].name.toLowerCase())}` : ''}.` : ''}</p>
+      <div class="row" style="justify-content:center;gap:24px">
+        <button class="icon-btn" id="sz-minus" aria-label="Moins" ${v <= 1 ? 'disabled' : ''}>${icon('minus')}</button>
+        <span class="num" style="font-size:32px;line-height:40px;min-width:3ch;text-align:center">${v}</span>
+        <button class="icon-btn" id="sz-plus" aria-label="Plus">${icon('plus')}</button>
       </div>
-      <p class="small muted" style="padding:0 4px">Séries faciles, à environ 60 % de l'objectif du niveau et loin de l'échec, pour accumuler du volume sans fatigue.
-      Fais le test du niveau un jour où tu te sens frais.</p>
-      ${missing.length ? `<p class="small" style="padding:0 4px;color:var(--wait)">Pas assez de temps cette semaine pour : ${missing.map(e => esc(e.name)).join(', ')}.</p>` : ''}
-    </section>
+      <p class="small muted">Le livre donne ses chiffres comme des exemples : ajuste jusqu'à trouver des séries faciles, sans fatigue. Le réglage tient jusqu'à ton prochain test.</p>
+      <div class="actions"><button class="btn" id="sz-auto">Calcul auto</button><button class="btn primary" id="sz-ok">Enregistrer</button></div>`);
+    $('#sz-minus').onclick = () => { v = Math.max(1, v - 1); draw(); };
+    $('#sz-plus').onclick = () => { v += 1; draw(); };
+    $('#sz-auto').onclick = () => { delete state.gtg.sizes[ex.id]; save(); closeModal(); render(); };
+    $('#sz-ok').onclick = () => {
+      state.gtg.sizes[ex.id] = { i: g.i, reps: v, testId: g.test ? g.test.id : null };
+      save(); closeModal(); render();
+    };
+  };
+  draw();
+}
 
-    <section>
-      <h2 class="section-title">Temps disponible</h2>
-      <form class="panel list" id="sched">${DAYS.map(([k, label]) => `
-        <label class="day"><span class="dname">${label}</span>
-          <input type="number" inputmode="numeric" min="0" step="5" name="${k}" id="sched-${k}" value="${esc(state.schedule[k])}" aria-label="Minutes le ${label}">
-          <span class="small muted">min</span></label>`).join('')}
-      </form>
-      <p class="small muted" style="padding:0 4px">0 pour un jour de repos. Le plan se met à jour dès que tu changes une valeur.</p>
-    </section>`;
+// ---------- Séance test ----------
+// Un test de max par exercice, reposé : il place le niveau et règle la taille des séries.
+const testPick = {};
+const testDraft = {};
+function renderTest(main) {
+  setTitle('Séance test', () => go('plan'));
+  const exs = state.exercises;
+  main.innerHTML = `
+    <div class="notice"><p><strong>Un test, pas une séance.</strong> Fais-le reposé, un jour sans séries avant.
+      Pour chaque exercice, choisis le niveau le plus dur que tu penses réussir proprement, et fais ton max une seule fois.
+      Si tu dépasses l'objectif, tu auras le feu vert pour tester le niveau suivant. Laisse vide ce que tu ne testes pas.</p></div>
+    <form class="panel form" id="test-form">${exs.map(e => {
+      if (!(e.id in testPick)) testPick[e.id] = grooveLevel(e) < 0 ? 0 : grooveLevel(e);
+      const i = testPick[e.id];
+      const l = e.levels[i];
+      const u = lvUnit(e, l);
+      return `<div class="test-row" data-ex="${esc(e.id)}">
+        <div class="row" style="align-items:baseline"><strong class="grow" style="font-weight:500">${esc(e.name)}</strong>
+          <span class="small muted num">objectif ${esc(setsText(l, u))}</span></div>
+        <label class="field"><span>Niveau testé</span><select data-lvl id="t-${esc(e.id)}-lvl">${e.levels.map((x, k) =>
+          `<option value="${k}" ${k === i ? 'selected' : ''}>${levelLabel(e, k)} · ${esc(x.name)}</option>`).join('')}</select></label>
+        <div class="field"><span>Ton max en ${unitLong(u)}${l.perSide ? ' (gauche, droite)' : ''}</span>
+          <div class="sets">${(l.perSide ? ['Gauche', 'Droite'] : ['Max']).map((p, k) =>
+            `<input type="number" inputmode="numeric" min="0" step="1" data-v="${k}" id="t-${esc(e.id)}-${k}" placeholder="${p}" aria-label="${esc(e.name)} : ${p}">`).join('')}</div></div>
+        ${l.cond ? `<label class="check"><input type="checkbox" data-ok id="t-${esc(e.id)}-ok"><span><span style="font-weight:500">Forme respectée</span><span class="small secondary" style="display:block">${esc(l.cond)}</span></span></label>` : ''}
+      </div>`;
+    }).join('')}
+      <label class="field"><span>Date</span><input type="date" id="t-date" value="${today()}"></label>
+      <button class="btn primary block" type="submit">Enregistrer le test</button>
+    </form>`;
 
-  $$('#sched input').forEach(inp => inp.addEventListener('change', () => {
-    state.schedule[inp.name] = Math.max(0, parseInt(inp.value, 10) || 0);
-    save(); render();
-  }));
+  // Changer de niveau redessine le formulaire : on garde ce qui est déjà saisi.
+  Object.entries(testDraft).forEach(([id, v]) => { const el = document.getElementById(id); if (el) { if (el.type === 'checkbox') el.checked = v; else el.value = v; } });
+  $$('[data-lvl]', main).forEach(s => s.onchange = () => {
+    const row = s.closest('[data-ex]');
+    $$('input', main).forEach(el => { if (el.closest('[data-ex]') !== row) testDraft[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+    testPick[row.dataset.ex] = +s.value; render();
+  });
+  $('#test-form').onsubmit = ev => {
+    ev.preventDefault();
+    const date = $('#t-date').value || today();
+    let n = 0;
+    $$('[data-ex]', main).forEach(row => {
+      const e = exById(row.dataset.ex), i = testPick[e.id], l = e.levels[i];
+      const vals = $$('[data-v]', row).map(x => parseInt(x.value, 10));
+      if (!vals.some(Number.isFinite)) return;
+      const s = { id: uid(), date, exId: e.id, level: i, sets: vals.map(v => (Number.isFinite(v) && v >= 0 ? v : 0)), note: 'Séance test', test: true };
+      if (l.cond) s.formOk = !!($('[data-ok]', row) || {}).checked;
+      state.sessions.push(s); persist.putSession(s);
+      e.current = stepRange(e, i)[0];
+      n++;
+    });
+    if (!n) return toast('Saisis au moins un résultat');
+    save();
+    Object.keys(testPick).forEach(k => delete testPick[k]);
+    Object.keys(testDraft).forEach(k => delete testDraft[k]);
+    toast(`Test enregistré pour ${n} exercice${n > 1 ? 's' : ''}`);
+    go('plan');
+  };
 }
 
 // ---------- Vue : profil ----------
@@ -1213,7 +1539,7 @@ function renderSettings(main) {
       <h2 class="section-title">Données</h2>
       <div class="panel" style="display:grid;gap:16px">
         <p class="secondary">${synced
-          ? `Tes données (${counts}) sont enregistrées dans ton compte Claude et synchronisées entre ton iPhone et ton PC.
+          ? `Tes données (${counts}, et tes séries) sont enregistrées dans ton compte Claude et synchronisées entre ton iPhone et ton PC.
              L'export garde une copie de secours. L'import reprend une sauvegarde, par exemple celle de l'ancienne version de l'appli.`
           : `Tes données (${counts}) restent sur cet appareil. Exporte-les régulièrement, et utilise l'import pour les transférer.`}</p>
         <div class="grid2">
