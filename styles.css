@@ -97,7 +97,7 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 24px max(16px, env(sa
 /* ---------- Onglets ---------- */
 .tabbar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 5;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--surface); border-top: 1px solid var(--line);
   padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
@@ -297,3 +297,22 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .day select { width: auto; min-width: 128px; }
 .seg button { min-width: 0; }
 .size-link { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+/* Marche */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.stats > div { display: grid; gap: 2px; min-width: 0; align-content: start; }
+.stats strong { font-size: 20px; line-height: 28px; font-weight: 500; }
+.bar { height: 6px; border-radius: 3px; background: var(--lamp-off); overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--go); border-radius: 3px; }
+svg.route { display: block; width: 100%; max-width: 360px; margin: 0 auto; height: auto; }
+svg.route path { fill: none; stroke: var(--text); stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
+svg.route.mini { flex: none; width: 44px; height: 44px; background: var(--raised); border-radius: 10px; }
+svg.route.mini path { stroke-width: 3; stroke: var(--text-2); }
+svg.route .start { fill: var(--go); }
+svg.route .end { fill: var(--text); }
+.route-ph { flex: none; width: 44px; height: 44px; border-radius: 10px; background: var(--raised); display: grid; place-items: center; color: var(--muted); }
+.splits { display: grid; gap: 6px; }
+.splits > div { display: grid; grid-template-columns: 2ch 1fr 5ch; gap: 12px; align-items: center; font-size: 14px; }
+.sbar { height: 6px; border-radius: 3px; background: var(--lamp-off); overflow: hidden; }
+.sbar span { display: block; height: 100%; background: var(--text-2); }
+.sbar span.ok { background: var(--go); }
+details summary { cursor: pointer; }

@@ -100,7 +100,7 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 24px max(16px, env(sa
 /* ---------- Onglets ---------- */
 .tabbar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 5;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--surface); border-top: 1px solid var(--line);
   padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
@@ -300,12 +300,32 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .day select { width: auto; min-width: 128px; }
 .seg button { min-width: 0; }
 .size-link { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+/* Marche */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.stats > div { display: grid; gap: 2px; min-width: 0; align-content: start; }
+.stats strong { font-size: 20px; line-height: 28px; font-weight: 500; }
+.bar { height: 6px; border-radius: 3px; background: var(--lamp-off); overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--go); border-radius: 3px; }
+svg.route { display: block; width: 100%; max-width: 360px; margin: 0 auto; height: auto; }
+svg.route path { fill: none; stroke: var(--text); stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
+svg.route.mini { flex: none; width: 44px; height: 44px; background: var(--raised); border-radius: 10px; }
+svg.route.mini path { stroke-width: 3; stroke: var(--text-2); }
+svg.route .start { fill: var(--go); }
+svg.route .end { fill: var(--text); }
+.route-ph { flex: none; width: 44px; height: 44px; border-radius: 10px; background: var(--raised); display: grid; place-items: center; color: var(--muted); }
+.splits { display: grid; gap: 6px; }
+.splits > div { display: grid; grid-template-columns: 2ch 1fr 5ch; gap: 12px; align-items: center; font-size: 14px; }
+.sbar { height: 6px; border-radius: 3px; background: var(--lamp-off); overflow: hidden; }
+.sbar span { display: block; height: 100%; background: var(--text-2); }
+.sbar span.ok { background: var(--go); }
+details summary { cursor: pointer; }
 </style>
 <header class="topbar"><h1 id="view-title">Exercices</h1></header>
 <main id="view" aria-live="polite"></main>
 <nav class="tabbar" aria-label="Navigation">
   <button data-tab="exercices" data-icon="dumbbell" class="active"><span>Exercices</span></button>
   <button data-tab="plan" data-icon="calendar"><span>Groove</span></button>
+  <button data-tab="marche" data-icon="footprints"><span>Marche</span></button>
   <button data-tab="profil" data-icon="ruler"><span>Profil</span></button>
   <button data-tab="reglages" data-icon="sliders"><span>Réglages</span></button>
 </nav>
@@ -317,7 +337,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '0.6.0';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -348,6 +368,7 @@ const ICONS = {
   down: '<path d="m6 9 6 6 6-6"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   minus: '<path d="M5 12h14"/>',
+  footprints: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
 };
 const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 
@@ -422,6 +443,7 @@ function defaultState() {
     schedule: { lun: 20, mar: 0, mer: 20, jeu: 0, ven: 20, sam: 30, dim: 0 },
     settings: { levelsReviewed: false },
     gtg: defaultGtg(),
+    walks: [],             // { id, date, name, distance (m), duration (s), gain, loss, splits, points }
     days: {},              // 'AAAA-MM-JJ' -> { date, type?, done: { exId: { sets, reps, level } } }
   };
 }
@@ -470,6 +492,7 @@ function migrate(s) {
     settings: { ...d.settings, ...(s.settings || {}) },
     gtg: { ...d.gtg, ...(s.gtg || {}), week: { ...d.gtg.week, ...((s.gtg && s.gtg.week) || {}) }, sizes: { ...((s.gtg && s.gtg.sizes) || {}) }, slots: { ...d.gtg.slots, ...((s.gtg && s.gtg.slots) || {}) } },
     days: s.days && typeof s.days === 'object' ? s.days : {},
+    walks: Array.isArray(s.walks) ? s.walks : [],
     exercises: Array.isArray(s.exercises) && s.exercises.length ? s.exercises : d.exercises,
     sessions: Array.isArray(s.sessions) ? s.sessions : [],
   };
@@ -516,6 +539,15 @@ const persist = {
     if (this.mode !== 'db') return this.saveLocal();
     return this.run(() => this.db.doc('measures/' + id).delete());
   },
+  putWalk(w) {
+    if (this.mode !== 'db') return this.saveLocal();
+    const body = clone(w);
+    return this.run(() => this.db.doc('walks/' + w.id).set(body));
+  },
+  deleteWalk(id) {
+    if (this.mode !== 'db') return this.saveLocal();
+    return this.run(() => this.db.doc('walks/' + id).delete());
+  },
   putDay(d) {
     if (this.mode !== 'db') return this.saveLocal();
     const body = clone(d);
@@ -526,7 +558,7 @@ const persist = {
     if (this.mode !== 'db') { state = next; return this.saveLocal(); }
     const db = this.db;
     return this.run(async () => {
-      for (const name of ['sessions', 'measures', 'days']) {
+      for (const name of ['sessions', 'measures', 'days', 'walks']) {
         const snap = await db.collection(name).get();
         for (const d of snap.docs) await db.doc(name + '/' + d.id).delete();
       }
@@ -534,6 +566,7 @@ const persist = {
       for (const s of next.sessions) await db.doc('sessions/' + s.id).set(clone(s));
       for (const m of next.profile.measurements) await db.doc('measures/' + m.id).set(clone(m));
       for (const d of Object.values(next.days || {})) await db.doc('days/' + d.date).set(clone(d));
+      for (const w of next.walks || []) await db.doc('walks/' + w.id).set(clone(w));
     });
   },
 };
@@ -543,7 +576,7 @@ const save = () => persist.config();
 // Re-rendu après une mise à jour venue d'un autre appareil, sans casser une saisie en cours.
 let lastKey = '';
 let pendingRender = false;
-function dataKey() { return JSON.stringify([state.exercises, state.schedule, state.profile, state.settings, state.sessions, state.gtg, state.days]); }
+function dataKey() { return JSON.stringify([state.exercises, state.schedule, state.profile, state.settings, state.sessions, state.gtg, state.days, state.walks]); }
 function remoteChanged() {
   const k = dataKey();
   if (k === lastKey) return;
@@ -568,9 +601,9 @@ async function connectStore() {
   persist.db = db;
   persist.mode = 'db';
   state = defaultState();
-  const got = { config: false, sessions: false, measures: false, days: false };
+  const got = { config: false, sessions: false, measures: false, days: false, walks: false };
   const settle = () => {
-    if (!persist.ready && got.config && got.sessions && got.measures && got.days) { persist.ready = true; render(); return; }
+    if (!persist.ready && got.config && got.sessions && got.measures && got.days && got.walks) { persist.ready = true; render(); return; }
     if (persist.ready) remoteChanged();
   };
   const fail = e => { console.warn('Synchronisation interrompue', e); toast('Synchronisation interrompue, recharge la page'); };
@@ -594,6 +627,10 @@ async function connectStore() {
   db.collection('days').onSnapshot(q => {
     state.days = Object.fromEntries(q.docs.map(d => { const x = clone(d.data()); return [x.date, x]; }));
     got.days = true; settle();
+  }, fail);
+  db.collection('walks').onSnapshot(q => {
+    state.walks = q.docs.map(d => clone(d.data()));
+    got.walks = true; settle();
   }, fail);
 }
 
@@ -699,7 +736,7 @@ function go(tab, view = null, id = null) {
 }
 $$('.tabbar button').forEach(b => {
   b.insertAdjacentHTML('afterbegin', icon(b.dataset.icon));
-  b.addEventListener('click', () => go(b.dataset.tab));
+  b.addEventListener('click', () => { walkView = null; planDate = null; go(b.dataset.tab); });
 });
 
 function setTitle(text, backTo) {
@@ -722,6 +759,7 @@ function render() {
   if (route.tab === 'exercices' && route.view === 'ex') return renderExercise(main, route.id);
   if (route.tab === 'exercices') return renderExercises(main);
   if (route.tab === 'plan') return renderPlan(main);
+  if (route.tab === 'marche') return renderWalks(main);
   if (route.tab === 'profil') return renderProfile(main);
   if (route.tab === 'reglages') return renderSettings(main);
 }
@@ -1447,6 +1485,209 @@ function renderTest(main) {
     toast(`Test enregistré pour ${n} exercice${n > 1 ? 's' : ''}`);
     go('plan');
   };
+}
+
+// ---------- Marche (Tour de Cholet) ----------
+// Les marches arrivent en fichiers GPX (export Strava sur le site, ou FitnessView), ou en saisie rapide.
+const EVENT = { name: 'Tour de Cholet', date: '2026-12-06', km: 14, record: 2 * 3600 + 46 * 60 };
+const TARGET_PACE = EVENT.record / EVENT.km; // secondes par km pour battre le record
+function fmtDur(sec) {
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h ? `${h}h${String(m).padStart(2, '0')}` : `${m} min ${String(s).padStart(2, '0')}`;
+}
+const fmtPace = sec => `${Math.floor(sec / 60)}'${String(Math.round(sec % 60)).padStart(2, '0')}`;
+const fmtKm = m => fr((m / 1000).toFixed(2));
+function haversine(a, b) {
+  const R = 6371000, toR = x => x * Math.PI / 180;
+  const dLat = toR(b[0] - a[0]), dLon = toR(b[1] - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a[0])) * Math.cos(toR(b[0])) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+// Lit un GPX : points [lat, lon, alt, temps] et calcule distance, durée, dénivelé, temps au km.
+function parseGpx(text, fileName) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('xml');
+  let nodes = [...doc.getElementsByTagName('trkpt')];
+  if (!nodes.length) nodes = [...doc.getElementsByTagName('rtept')];
+  const pts = nodes.map(n => {
+    const ele = n.getElementsByTagName('ele')[0], time = n.getElementsByTagName('time')[0];
+    return [parseFloat(n.getAttribute('lat')), parseFloat(n.getAttribute('lon')),
+      ele ? parseFloat(ele.textContent) : null, time ? Date.parse(time.textContent) : null];
+  }).filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+  if (pts.length < 2) throw new Error('vide');
+  let dist = 0, gain = 0, loss = 0, ref = null;
+  const cum = [0], splits = [];
+  let nextKm = 1000, kmStart = pts[0][3];
+  for (let i = 1; i < pts.length; i++) {
+    dist += haversine(pts[i - 1], pts[i]);
+    cum.push(dist);
+    if (pts[i][3] != null && kmStart != null && dist >= nextKm) {
+      splits.push(Math.round((pts[i][3] - kmStart) / 1000));
+      kmStart = pts[i][3]; nextKm += 1000;
+    }
+  }
+  // Dénivelé avec un seuil de 3 m, pour ne pas compter le bruit du GPS.
+  for (const p of pts) {
+    if (p[2] == null) continue;
+    if (ref == null) { ref = p[2]; continue; }
+    const d = p[2] - ref;
+    if (d >= 3) { gain += d; ref = p[2]; } else if (d <= -3) { loss -= d; ref = p[2]; }
+  }
+  const t0 = pts[0][3], t1 = pts[pts.length - 1][3];
+  const duration = t0 != null && t1 != null ? Math.round((t1 - t0) / 1000) : null;
+  // On garde au plus 400 points pour le tracé et le profil.
+  const stepN = Math.max(1, Math.ceil(pts.length / 400));
+  const keep = pts.map((p, i) => [+p[0].toFixed(5), +p[1].toFixed(5), p[2] == null ? null : Math.round(p[2] * 10) / 10, Math.round(cum[i])])
+    .filter((_, i) => i % stepN === 0 || i === pts.length - 1);
+  const nameNode = doc.getElementsByTagName('name')[0];
+  const d = t0 != null ? new Date(t0) : new Date();
+  return {
+    id: uid(), date: isoOf(d), name: (nameNode && nameNode.textContent.trim()) || fileName.replace(/\.gpx$/i, ''),
+    distance: Math.round(dist), duration, gain: Math.round(gain), loss: Math.round(loss), splits, points: keep, source: 'gpx',
+  };
+}
+const paceOf = w => (w.duration && w.distance ? w.duration / (w.distance / 1000) : null);
+
+let walkView = null; // id de la marche affichée
+function renderWalks(main) {
+  if (walkView) return renderWalk(main, walkView);
+  setTitle('Marche');
+  const walks = state.walks.slice().sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id));
+  const days = daysBetween(today(), EVENT.date);
+  const wk = weekDates();
+  const weekKm = state.walks.filter(w => w.date >= wk[0] && w.date <= wk[6]).reduce((t, w) => t + w.distance, 0);
+  const longest = walks.reduce((m, w) => (!m || w.distance > m.distance ? w : m), null);
+  const recent = walks.filter(w => paceOf(w) && daysBetween(w.date, today()) <= 28);
+  const avgPace = recent.length ? recent.reduce((t, w) => t + w.duration, 0) / recent.reduce((t, w) => t + w.distance / 1000, 0) : null;
+  const projection = avgPace ? avgPace * EVENT.km : null;
+  const okPace = avgPace && avgPace <= TARGET_PACE;
+
+  let html = '';
+  if (days >= 0) {
+    html += `<section>
+      <h2 class="section-title"><span>${EVENT.name} · 6 décembre</span><span class="num">${days ? `J-${days}` : 'Aujourd\'hui'}</span></h2>
+      <div class="panel" style="display:grid;gap:16px">
+        <div class="stats">
+          <div><span class="small muted">Cette semaine</span><strong class="num">${fr((weekKm / 1000).toFixed(1))} km</strong></div>
+          <div><span class="small muted">Plus longue</span><strong class="num">${longest ? fr((longest.distance / 1000).toFixed(1)) : '0'} km</strong><span class="small muted">sur ${EVENT.km}</span></div>
+          <div><span class="small muted">Allure (4 sem.)</span><strong class="num ${avgPace ? (okPace ? 'ok' : '') : ''}">${avgPace ? fmtPace(avgPace) : '–'}</strong><span class="small muted">visée ${fmtPace(TARGET_PACE)}</span></div>
+        </div>
+        <div class="bar" role="img" aria-label="Plus longue marche : ${longest ? fmtKm(longest.distance) : 0} km sur ${EVENT.km}"><span style="width:${Math.min(100, longest ? longest.distance / 10 / EVENT.km : 0)}%"></span></div>
+        <p class="small secondary">${projection
+          ? `À ton allure moyenne, les ${EVENT.km} km prendraient environ <span class="num">${fmtDur(projection)}</span>, ${projection < EVENT.record ? `soit <span class="num">${fmtDur(EVENT.record - projection)}</span> de marge sur ton record (2h46)` : 'au-dessus de ton record (2h46) : accélère un peu le pas'}. Ce qu'il reste à construire, c'est l'endurance pour tenir la distance.`
+          : `Pour battre ton record de 2h46, il faut marcher à ${fmtPace(TARGET_PACE)} au km ou mieux. Importe tes marches pour suivre ta préparation.`}</p>
+      </div>
+    </section>`;
+  }
+
+  html += `<section>
+    <h2 class="section-title">Ajouter une marche</h2>
+    <div class="panel" style="display:grid;gap:12px">
+      <label class="btn primary block">Importer des fichiers GPX<input type="file" id="gpx" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple hidden></label>
+      <p class="small muted">Sur le site Strava (PC) : ouvre l'activité, menu « ⋯ », « Exporter au format GPX ». Tu peux en importer plusieurs d'un coup.</p>
+      <details><summary class="small secondary">Saisie rapide, sans fichier</summary>
+        <form class="form" id="walk-form" style="margin-top:12px">
+          <div class="grid3">
+            <label class="field"><span>Date</span><input type="date" name="date" id="w-date" value="${today()}"></label>
+            <label class="field"><span>Distance (km)</span><input type="text" inputmode="decimal" name="km" id="w-km" placeholder="3,6"></label>
+            <label class="field"><span>Durée (min)</span><input type="number" inputmode="numeric" step="1" min="0" name="min" id="w-min"></label>
+          </div>
+          <button class="btn block" type="submit">Enregistrer</button>
+        </form></details>
+    </div>
+  </section>`;
+
+  html += `<section>
+    <h2 class="section-title"><span>Mes marches</span><span class="num">${walks.length || ''}</span></h2>
+    <div class="panel list">${walks.length ? walks.map(w => `<a class="ex-row" href="#" data-walk="${esc(w.id)}">
+        ${w.points && w.points.length > 1 ? routeSvg(w, 44) : `<span class="route-ph">${icon('footprints')}</span>`}
+        <div class="grow"><div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(w.name || 'Marche')}</span><span class="num small muted">${fmtDate(w.date)}</span></div>
+          <div class="small secondary num">${fmtKm(w.distance)} km${w.duration ? ` · ${fmtDur(w.duration)} · ${fmtPace(paceOf(w))}/km` : ''}${w.gain ? ` · +${w.gain} m` : ''}</div></div>
+        ${icon('chevronRight', 'chev')}</a>`).join('') : `<p class="empty" style="padding:16px 0">Aucune marche pour l'instant.</p>`}</div>
+  </section>`;
+  main.innerHTML = html;
+
+  $('#gpx').onchange = async e => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    let ok = 0, dup = 0, bad = 0;
+    for (const f of files) {
+      try {
+        const w = parseGpx(await f.text(), f.name);
+        if (state.walks.some(x => x.date === w.date && Math.abs(x.distance - w.distance) < 20)) { dup++; continue; }
+        state.walks.push(w); persist.putWalk(w); ok++;
+      } catch (err) { bad++; }
+    }
+    toast([ok && `${ok} marche${ok > 1 ? 's' : ''} importée${ok > 1 ? 's' : ''}`, dup && `${dup} déjà là`, bad && `${bad} fichier${bad > 1 ? 's' : ''} illisible${bad > 1 ? 's' : ''}`].filter(Boolean).join(', ') || 'Aucun fichier');
+    render();
+  };
+  $('#walk-form').onsubmit = e => {
+    e.preventDefault();
+    const f = e.target;
+    const km = parseFloat(String(f.km.value).replace(',', '.')), min = parseFloat(f.min.value);
+    if (!(km > 0)) return toast('Saisis la distance');
+    const w = { id: uid(), date: f.date.value || today(), name: 'Marche', distance: Math.round(km * 1000), duration: min > 0 ? Math.round(min * 60) : null, gain: 0, loss: 0, splits: [], points: [], source: 'manuel' };
+    state.walks.push(w); persist.putWalk(w); toast('Marche enregistrée'); render();
+  };
+  $$('[data-walk]', main).forEach(a => a.onclick = e => { e.preventDefault(); walkView = a.dataset.walk; render(); window.scrollTo(0, 0); });
+}
+
+// Tracé sans fond de carte (l'artefact ne peut pas charger de tuiles), projeté à plat.
+function routeSvg(w, size = null) {
+  const P = w.points;
+  const lat0 = P.reduce((t, p) => t + p[0], 0) / P.length;
+  const k = Math.cos(lat0 * Math.PI / 180);
+  const xs = P.map(p => p[1] * k), ys = P.map(p => -p[0]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const span = Math.max(maxX - minX, maxY - minY) || 1;
+  const W = 100, pad = 6, s = (W - 2 * pad) / span;
+  const ox = pad + ((W - 2 * pad) - (maxX - minX) * s) / 2, oy = pad + ((W - 2 * pad) - (maxY - minY) * s) / 2;
+  const d = P.map((p, i) => `${i ? 'L' : 'M'}${(ox + (xs[i] - minX) * s).toFixed(1)},${(oy + (ys[i] - minY) * s).toFixed(1)}`).join(' ');
+  const end = d.split(' ').pop().slice(1).split(',');
+  const start = d.split(' ')[0].slice(1).split(',');
+  return `<svg class="route${size ? ' mini' : ''}" viewBox="0 0 ${W} ${W}" ${size ? `width="${size}" height="${size}"` : ''} role="img" aria-label="Tracé de la marche">
+    <path d="${d}"/>${size ? '' : `<circle class="start" cx="${start[0]}" cy="${start[1]}" r="2"/><circle class="end" cx="${end[0]}" cy="${end[1]}" r="2"/>`}</svg>`;
+}
+function elevationSvg(w) {
+  const P = w.points.filter(p => p[2] != null);
+  if (P.length < 2) return '';
+  const W = 320, H = 120, L = 36, R = 8, T = 10, B = 22;
+  const maxD = P[P.length - 1][3] || 1;
+  let min = Math.min(...P.map(p => p[2])), max = Math.max(...P.map(p => p[2]));
+  const st = niceStep(Math.max(10, max - min));
+  min = Math.floor(min / st) * st; max = Math.ceil(max / st) * st; if (max === min) max += st;
+  const x = d => L + d / maxD * (W - L - R), y = v => T + (1 - (v - min) / (max - min)) * (H - T - B);
+  const line = P.map((p, i) => `${i ? 'L' : 'M'}${x(p[3]).toFixed(1)},${y(p[2]).toFixed(1)}`).join(' ');
+  const ticks = []; for (let v = min; v <= max + 1e-9; v += st) ticks.push(v);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Profil d'altitude, de ${Math.round(min)} à ${Math.round(max)} m">
+    ${ticks.map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('')}
+    <path class="area" d="${line} L${x(maxD)},${H - B} L${L},${H - B} Z"/><path class="line" d="${line}"/>
+    <text x="${L}" y="${H - 6}">0 km</text><text x="${W - R}" y="${H - 6}" text-anchor="end">${fmtKm(maxD)} km</text></svg>`;
+}
+function renderWalk(main, id) {
+  const w = state.walks.find(x => x.id === id);
+  if (!w) { walkView = null; return renderWalks(main); }
+  setTitle(w.name || 'Marche', () => { walkView = null; render(); });
+  const pace = paceOf(w);
+  main.innerHTML = `
+    <div class="level-head"><div class="small muted num">${fmtLong(w.date)} · ${w.source === 'gpx' ? 'fichier GPX' : 'saisie rapide'}</div>
+      <h2 class="num">${fmtKm(w.distance)} km${w.duration ? ` en ${fmtDur(w.duration)}` : ''}</h2></div>
+    <div class="panel stats">
+      <div><span class="small muted">Allure</span><strong class="num ${pace && pace <= TARGET_PACE ? 'ok' : ''}">${pace ? fmtPace(pace) + '/km' : '–'}</strong></div>
+      <div><span class="small muted">Vitesse</span><strong class="num">${pace ? fr((3600 / pace).toFixed(1)) + ' km/h' : '–'}</strong></div>
+      <div><span class="small muted">Dénivelé</span><strong class="num">${w.points && w.points.some(p => p[2] != null) ? `+${w.gain} m` : '–'}</strong></div>
+    </div>
+    ${w.points && w.points.length > 1 ? `<section><h2 class="section-title">Tracé</h2><div class="panel">${routeSvg(w)}</div></section>` : ''}
+    ${elevationSvg(w) ? `<section><h2 class="section-title"><span>Altitude</span><span class="num">+${w.gain} m · −${w.loss} m</span></h2><div class="panel">${elevationSvg(w)}</div></section>` : ''}
+    ${w.splits && w.splits.length ? `<section><h2 class="section-title"><span>Temps au kilomètre</span><span class="num">visée ${fmtPace(TARGET_PACE)}</span></h2>
+      <div class="panel"><div class="splits">${w.splits.map((s, i) => `<div><span class="num muted">${i + 1}</span>
+        <span class="sbar"><span style="width:${Math.min(100, s / (TARGET_PACE * 1.3) * 100)}%" class="${s <= TARGET_PACE ? 'ok' : ''}"></span></span>
+        <span class="num ${s <= TARGET_PACE ? 'ok' : ''}">${fmtPace(s)}</span></div>`).join('')}</div></div></section>` : ''}
+    <button class="btn block" id="walk-del" style="color:var(--stop)">Supprimer cette marche</button>`;
+  $('#walk-del').onclick = () => confirmAction('Supprimer cette marche ?', 'Supprimer', () => {
+    state.walks = state.walks.filter(x => x.id !== id); persist.deleteWalk(id); walkView = null; render();
+  });
 }
 
 // ---------- Vue : profil ----------
