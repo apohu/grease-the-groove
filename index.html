@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Grease the Groove</title>
+  <meta name="theme-color" content="#0f1720">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="GtG">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="view-title">Exercices</h1>
+  </header>
+
+  <main id="view" aria-live="polite"></main>
+
+  <nav class="tabbar" aria-label="Navigation">
+    <button data-tab="exercices" class="active"><span class="ico">🏋️</span><span>Exercices</span></button>
+    <button data-tab="plan"><span class="ico">📅</span><span>Plan</span></button>
+    <button data-tab="profil"><span class="ico">📏</span><span>Profil</span></button>
+    <button data-tab="reglages"><span class="ico">⚙️</span><span>Réglages</span></button>
+  </nav>
+
+  <dialog id="modal"><div id="modal-body"></div></dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
