@@ -337,7 +337,7 @@ details summary { cursor: pointer; }
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.6.1';
+const APP_VERSION = '0.6.2';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -1590,7 +1590,7 @@ function renderWalks(main) {
   const wk = weekDates();
   const weekKm = state.walks.filter(w => w.date >= wk[0] && w.date <= wk[6]).reduce((t, w) => t + w.distance, 0);
   const longest = walks.reduce((m, w) => (!m || w.distance > m.distance ? w : m), null);
-  const recent = walks.filter(w => paceOf(w) && daysBetween(w.date, today()) <= 28);
+  const recent = walks.filter(w => paceOf(w) && w.kind !== 'mixte' && daysBetween(w.date, today()) <= 28);
   const avgPace = recent.length ? recent.reduce((t, w) => t + w.duration, 0) / recent.reduce((t, w) => t + w.distance / 1000, 0) : null;
   const projection = avgPace ? avgPace * EVENT.km : null;
   const okPace = avgPace && avgPace <= TARGET_PACE;
@@ -1603,7 +1603,7 @@ function renderWalks(main) {
         <div class="stats">
           <div><span class="small muted">Cette semaine</span><strong class="num">${fr((weekKm / 1000).toFixed(1))} km</strong></div>
           <div><span class="small muted">Plus longue</span><strong class="num">${longest ? fr((longest.distance / 1000).toFixed(1)) : '0'} km</strong><span class="small muted">sur ${EVENT.km}</span></div>
-          <div><span class="small muted">Allure (4 sem.)</span><strong class="num ${avgPace ? (okPace ? 'ok' : '') : ''}">${avgPace ? fmtPace(avgPace) : '–'}</strong><span class="small muted">visée ${fmtPace(TARGET_PACE)}</span></div>
+          <div><span class="small muted">Allure marche</span><strong class="num ${avgPace ? (okPace ? 'ok' : '') : ''}">${avgPace ? fmtPace(avgPace) : '–'}</strong><span class="small muted">visée ${fmtPace(TARGET_PACE)}</span></div>
         </div>
         <div class="bar" role="img" aria-label="Plus longue marche : ${longest ? fmtKm(longest.distance) : 0} km sur ${EVENT.km}"><span style="width:${Math.min(100, longest ? longest.distance / 10 / EVENT.km : 0)}%"></span></div>
         <p class="small secondary">${projection
@@ -1635,7 +1635,8 @@ function renderWalks(main) {
     <div class="panel list">${walks.length ? walks.map(w => `<a class="ex-row" href="#" data-walk="${esc(w.id)}">
         ${w.points && w.points.length > 1 ? routeSvg(w, 44) : `<span class="route-ph">${icon('footprints')}</span>`}
         <div class="grow"><div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(w.name || 'Marche')}</span><span class="num small muted">${fmtDate(w.date)}</span></div>
-          <div class="small secondary num">${fmtKm(w.distance)} km${w.duration ? ` · ${fmtDur(w.duration)} · ${fmtPace(paceOf(w))}/km` : ''}${w.gain ? ` · +${w.gain} m` : ''}</div></div>
+          <div class="small secondary num">${fmtKm(w.distance)} km${w.duration ? ` · ${fmtDur(w.duration)} · ${fmtPace(paceOf(w))}/km` : ''}${w.gain ? ` · +${w.gain} m` : ''}</div>
+          <div class="small muted">${w.kind === 'mixte' ? 'Marche et footing' : 'Marche pure'}${w.note ? ` · ${esc(w.note)}` : ''}</div></div>
         ${icon('chevronRight', 'chev')}</a>`).join('') : `<p class="empty" style="padding:16px 0">Aucune marche pour l'instant.</p>`}</div>
   </section>`;
   main.innerHTML = html;
@@ -1745,7 +1746,17 @@ function renderWalk(main, id) {
       <div class="panel"><div class="splits">${w.splits.map((s, i) => `<div><span class="num muted">${i + 1}</span>
         <span class="sbar"><span style="width:${Math.min(100, s / (TARGET_PACE * 1.3) * 100)}%" class="${s <= TARGET_PACE ? 'ok' : ''}"></span></span>
         <span class="num ${s <= TARGET_PACE ? 'ok' : ''}">${fmtPace(s)}</span></div>`).join('')}</div></div></section>` : ''}
+    <section><h2 class="section-title">Note</h2>
+      <div class="panel form">
+        <div class="seg" role="radiogroup" aria-label="Type de sortie">
+          <button type="button" role="radio" aria-checked="${w.kind !== 'mixte'}" class="${w.kind !== 'mixte' ? 'on' : ''}" data-kind="marche">Marche pure</button>
+          <button type="button" role="radio" aria-checked="${w.kind === 'mixte'}" class="${w.kind === 'mixte' ? 'on' : ''}" data-kind="mixte">Marche et footing</button></div>
+        <label class="field"><span>Note (ressenti, parcours, poussette…)</span><textarea id="walk-note" rows="2" placeholder="Facultatif">${esc(w.note || '')}</textarea></label>
+        <p class="small muted">Seules les marches pures comptent dans l'allure de préparation au Tour de Cholet.</p>
+      </div></section>
     <button class="btn block" id="walk-del" style="color:var(--stop)">Supprimer cette marche</button>`;
+  $$('[data-kind]', main).forEach(b => b.onclick = () => { w.kind = b.dataset.kind; persist.putWalk(w); render(); });
+  $('#walk-note').onchange = e => { const v = e.target.value.trim(); if (v) w.note = v; else delete w.note; persist.putWalk(w); toast('Note enregistrée'); };
   $('#walk-del').onclick = () => confirmAction('Supprimer cette marche ?', 'Supprimer', () => {
     state.walks = state.walks.filter(x => x.id !== id); persist.deleteWalk(id); walkView = null; render();
   });
