@@ -1,10 +1,10 @@
-/* Grease the Groove — suivi callisthénie V0
+/* Grease the Groove — suivi callisthénie
  * Appli 100 % locale : les données restent dans le navigateur (localStorage).
  */
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.1.0';
+const APP_VERSION = '0.2.0';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -20,6 +20,22 @@ const MEASURES = [
   ['cuisse', 'Tour de cuisse', 'cm'],
   ['mollet', 'Tour de mollet', 'cm'],
 ];
+
+// Icônes (tracés lucide, ISC)
+const ICONS = {
+  dumbbell: '<path d="M17.596 12.768a2 2 0 1 0 2.829-2.829l-1.768-1.767a2 2 0 0 0 2.828-2.829l-2.828-2.828a2 2 0 0 0-2.829 2.828l-1.767-1.768a2 2 0 1 0-2.829 2.829z"/><path d="m2.5 21.5 1.4-1.4"/><path d="m20.1 3.9 1.4-1.4"/><path d="M5.343 21.485a2 2 0 1 0 2.829-2.828l1.767 1.768a2 2 0 1 0 2.829-2.829l-6.364-6.364a2 2 0 1 0-2.829 2.829l1.768 1.767a2 2 0 0 0-2.828 2.829z"/><path d="m9.6 14.4 4.8-4.8"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
+  ruler: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>',
+  sliders: '<path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/>',
+  chevronRight: '<path d="m9 18 6-6-6-6"/>',
+  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  up: '<path d="m18 15-6-6-6 6"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+};
+const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 
 // Niveaux génériques de départ : à remplacer par ceux du livre.
 function lvl(name, sets, target, times = 2) { return { name, sets, target, times }; }
@@ -98,19 +114,20 @@ function fmtDate(iso) {
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y.slice(2)}`;
 }
+const fr = v => String(v).replace('.', ',');
 const unitLabel = u => (u === 'sec' ? 's' : 'rép.');
 const unitLong = u => (u === 'sec' ? 'secondes' : 'répétitions');
 function toast(msg) {
   $$('.toast').forEach(x => x.remove());
   const t = document.createElement('div');
-  t.className = 'toast'; t.textContent = msg;
+  t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg;
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2200);
+  setTimeout(() => t.remove(), 2400);
 }
 const exById = id => state.exercises.find(e => e.id === id);
+const setsText = (l, unit) => `${l.sets} × ${l.target} ${unitLabel(unit)}`;
 function criterionText(l, unit) {
-  const n = l.times > 1 ? `, sur ${l.times} séances d'affilée` : '';
-  return `${l.sets} × ${l.target} ${unitLabel(unit)}${n}`;
+  return `${setsText(l, unit)}${l.times > 1 ? `, ${l.times} séances d'affilée` : ''}`;
 }
 
 // ---------- Feu vert ----------
@@ -119,28 +136,31 @@ function criterionText(l, unit) {
 function sessionValid(sess, l) {
   return sess.sets.filter(v => v >= l.target).length >= l.sets;
 }
-function levelStatus(ex) {
-  const l = ex.levels[ex.current];
-  if (!l) return { kind: 'grey', label: 'Aucun niveau' };
-  const atLevel = state.sessions
+function atLevel(ex) {
+  return state.sessions
     .filter(s => s.exId === ex.id && s.level === ex.current)
     .sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
-  if (!atLevel.length) return { kind: 'grey', label: 'Pas encore de séance', streak: 0 };
-  let streak = 0;
-  for (let i = atLevel.length - 1; i >= 0 && sessionValid(atLevel[i], l); i--) streak++;
+}
+// state : off (aucune séance), stop (dernière séance non validée), wait (en cours), go (feu vert)
+function levelStatus(ex) {
+  const l = ex.levels[ex.current];
+  if (!l) return { state: 'off', label: 'Aucun niveau' };
+  const list = atLevel(ex);
   const need = Math.max(1, l.times || 1);
+  if (!list.length) return { state: 'off', label: 'Pas encore de séance à ce niveau', streak: 0, need };
+  let streak = 0;
+  for (let i = list.length - 1; i >= 0 && sessionValid(list[i], l); i--) streak++;
   const isLast = ex.current >= ex.levels.length - 1;
   if (streak >= need) {
     return isLast
-      ? { kind: 'green', label: 'Niveau final maîtrisé', streak, need, done: true }
-      : { kind: 'green', label: 'Feu vert', streak, need, green: true };
+      ? { state: 'go', label: 'Dernier niveau maîtrisé', streak, need, done: true }
+      : { state: 'go', label: 'Feu vert pour le niveau suivant', streak, need, green: true };
   }
-  return { kind: 'orange', label: `${streak}/${need} séance${need > 1 ? 's' : ''} validée${streak > 1 ? 's' : ''}`, streak, need };
+  if (!streak) return { state: 'stop', label: `Critère pas encore atteint, 0 sur ${need}`, streak, need };
+  return { state: 'wait', label: `${streak} séance validée sur ${need}`, streak, need };
 }
-function badge(st) {
-  const dot = st.kind === 'green' ? '🟢' : st.kind === 'orange' ? '🟠' : '⚪';
-  return `<span class="badge ${st.kind}">${dot} ${esc(st.label)}</span>`;
-}
+const signal = (st, lg = false) =>
+  `<span class="signal${lg ? ' lg' : ''}" data-state="${st.state}" role="img" aria-label="${esc(st.label)}"><i></i><i></i><i></i></span>`;
 
 // ---------- Navigation ----------
 let route = { tab: 'exercices', view: null, id: null };
@@ -149,11 +169,14 @@ function go(tab, view = null, id = null) {
   render();
   window.scrollTo(0, 0);
 }
-$$('.tabbar button').forEach(b => b.addEventListener('click', () => go(b.dataset.tab)));
+$$('.tabbar button').forEach(b => {
+  b.insertAdjacentHTML('afterbegin', icon(b.dataset.icon));
+  b.addEventListener('click', () => go(b.dataset.tab));
+});
 
 function setTitle(text, backTo) {
   const bar = $('.topbar');
-  bar.innerHTML = (backTo ? `<button class="back" id="back">‹ Retour</button>` : '') +
+  bar.innerHTML = (backTo ? `<button class="back" id="back" aria-label="Retour">${icon('chevronLeft')}</button>` : '') +
     `<h1 id="view-title">${esc(text)}</h1>`;
   if (backTo) $('#back').onclick = backTo;
 }
@@ -171,37 +194,42 @@ function render() {
 // ---------- Vue : liste des exercices ----------
 function renderExercises(main) {
   setTitle('Exercices');
+  const greens = state.exercises.filter(e => levelStatus(e).green).length;
   let html = '';
   if (!state.settings.levelsReviewed) {
-    html += `<div class="card">
-      <h2>Niveaux à personnaliser</h2>
-      <p class="muted">Les niveaux et critères de passage ci-dessous sont génériques. Remplace-les par ceux de ton livre :
-      ouvre un exercice puis « Modifier les niveaux ».</p>
-      <button class="btn sm" id="dismiss-levels">C'est fait, masquer ce message</button>
+    html += `<div class="notice">
+      <p><strong>Niveaux à personnaliser.</strong> Les niveaux et critères de départ sont génériques.
+      Remplace-les par ceux de ton livre depuis la fiche de chaque exercice, avec « Modifier ».</p>
+      <div><button class="btn sm" id="dismiss-levels">C'est fait</button></div>
     </div>`;
   }
-  for (const ex of state.exercises) {
-    const l = ex.levels[ex.current];
-    const st = levelStatus(ex);
-    const pct = ex.levels.length ? Math.round(((ex.current + (st.done ? 1 : 0)) / ex.levels.length) * 100) : 0;
-    html += `<div class="card ex-card" data-ex="${esc(ex.id)}" role="button" tabindex="0">
-      <div class="row between"><h2>${esc(ex.name)}</h2>${badge(st)}</div>
-      <div class="level">${l ? esc(l.name) : '—'}</div>
-      <div class="muted small">Niveau ${ex.current + 1}/${ex.levels.length}${l ? ' · objectif ' + esc(criterionText(l, ex.unit)) : ''}</div>
-      <div class="progress"><div style="width:${pct}%"></div></div>
-    </div>`;
-  }
+  html += `<section>
+    <h2 class="section-title"><span>Les six bases</span><span class="num">${greens ? `${greens} feu${greens > 1 ? 'x' : ''} vert${greens > 1 ? 's' : ''}` : ''}</span></h2>
+    <div class="panel list">${state.exercises.map(ex => {
+      const l = ex.levels[ex.current];
+      const st = levelStatus(ex);
+      return `<a class="ex-row" href="#" data-ex="${esc(ex.id)}">
+        ${signal(st)}
+        <div class="grow">
+          <div class="row" style="gap:8px;align-items:baseline">
+            <span class="name grow">${esc(ex.name)}</span>
+            <span class="num small muted">N${ex.current + 1}/${ex.levels.length}</span>
+          </div>
+          <div class="small secondary">${l ? esc(l.name) : '—'}${l ? ` · <span class="num">${esc(setsText(l, ex.unit))}</span>` : ''}</div>
+          <div class="rungs" aria-hidden="true">${ex.levels.map((_, i) =>
+            `<span class="${i < ex.current || (i === ex.current && st.done) ? 'done' : i === ex.current ? 'current' + (st.green ? ' go' : '') : ''}"></span>`).join('')}</div>
+        </div>
+        ${icon('chevronRight', 'chev')}
+      </a>`;
+    }).join('')}</div>
+  </section>`;
   main.innerHTML = html;
   const d = $('#dismiss-levels');
   if (d) d.onclick = () => { state.settings.levelsReviewed = true; save(); render(); };
-  $$('.ex-card', main).forEach(c => {
-    const open = () => go('exercices', 'ex', c.dataset.ex);
-    c.onclick = open;
-    c.onkeydown = e => { if (e.key === 'Enter') open(); };
-  });
+  $$('.ex-row', main).forEach(c => c.onclick = e => { e.preventDefault(); go('exercices', 'ex', c.dataset.ex); });
 }
 
-// ---------- Vue : détail d'un exercice ----------
+// ---------- Vue : fiche d'un exercice ----------
 function renderExercise(main, id) {
   const ex = exById(id);
   if (!ex) return go('exercices');
@@ -211,66 +239,83 @@ function renderExercise(main, id) {
   const sessions = state.sessions.filter(s => s.exId === ex.id)
     .sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id));
   const nSets = l ? Math.max(l.sets, 1) : 3;
+  const next = ex.levels[ex.current + 1];
 
-  let html = `<div class="card">
-    <div class="row between wrap"><div class="muted small">Niveau ${ex.current + 1}/${ex.levels.length}</div>${badge(st)}</div>
-    <h2 style="margin-top:6px">${l ? esc(l.name) : 'Aucun niveau défini'}</h2>
-    ${l ? `<div class="muted">Critère de passage : ${esc(criterionText(l, ex.unit))}</div>` : ''}
-    ${st.green ? `<p>Tu as validé ce niveau. Teste le suivant : <strong>${esc(ex.levels[ex.current + 1].name)}</strong>.</p>
-      <button class="btn go block" id="level-up">Passer au niveau suivant</button>` : ''}
-    ${st.done ? `<p>Bravo, tu maîtrises le dernier niveau de cet exercice. Tu peux en ajouter un dans « Modifier les niveaux ».</p>` : ''}
+  let html = `<div class="level-head">
+    <div class="small muted num">Niveau ${ex.current + 1} sur ${ex.levels.length}</div>
+    <h2>${l ? esc(l.name) : 'Aucun niveau défini'}</h2>
+    ${l ? `<div class="secondary">Objectif <span class="num">${esc(criterionText(l, ex.unit))}</span></div>` : ''}
   </div>`;
 
-  html += `<div class="card">
-    <h2>Enregistrer une séance</h2>
-    <div class="muted small">Saisis tes séries en ${unitLong(ex.unit)}${l ? ` au niveau « ${esc(l.name)} »` : ''}.</div>
-    <form id="log-form">
-      <div class="sets" id="sets">${Array.from({ length: nSets }, (_, i) =>
-        `<input type="number" inputmode="numeric" min="0" step="1" placeholder="S${i + 1}" aria-label="Série ${i + 1}">`).join('')}
-        <button type="button" class="btn sm" id="add-set" aria-label="Ajouter une série">＋</button>
+  html += `<div class="panel" style="display:grid;gap:16px">
+    <div class="status${st.state === 'go' ? ' go' : ''}">${signal(st, true)}<div class="grow">
+      <div style="font-weight:500">${esc(st.label)}</div>
+      ${st.green ? `<div class="small secondary">Prochain niveau : ${esc(next.name)}</div>` : ''}
+      ${st.done ? `<div class="small secondary">Ajoute un niveau avec « Modifier » pour continuer.</div>` : ''}
+      ${!st.green && !st.done && l ? `<div class="small secondary">Il faut ${l.sets} séries d'au moins <span class="num">${l.target} ${unitLabel(ex.unit)}</span> dans une même séance.</div>` : ''}
+    </div></div>
+    ${st.green ? `<button class="btn go block" id="level-up">Passer à ${esc(next.name)}</button>` : ''}
+  </div>`;
+
+  html += `<section>
+    <h2 class="section-title">Enregistrer une séance</h2>
+    <form class="panel form" id="log-form">
+      <div class="field"><span>Séries en ${unitLong(ex.unit)}</span>
+        <div class="sets" id="sets">${Array.from({ length: nSets }, (_, i) =>
+          `<input type="number" inputmode="numeric" min="0" step="1" placeholder="${i + 1}" aria-label="Série ${i + 1}" id="set-${i}">`).join('')}
+          <button type="button" class="btn" id="add-set" aria-label="Ajouter une série">${icon('plus')}</button>
+        </div>
       </div>
       <div class="grid2">
-        <label class="field"><span>Date</span><input type="date" name="date" value="${today()}" required></label>
-        <label class="field"><span>Note (optionnel)</span><input type="text" name="note" placeholder="Ressenti, forme…"></label>
+        <label class="field"><span>Date</span><input type="date" name="date" id="log-date" value="${today()}" required></label>
+        <label class="field"><span>Note</span><input type="text" name="note" id="log-note" placeholder="Facultatif"></label>
       </div>
       <button class="btn primary block" type="submit" ${l ? '' : 'disabled'}>Enregistrer</button>
     </form>
-  </div>`;
+  </section>`;
 
-  html += `<div class="card">
-    <div class="row between"><h2>Niveaux</h2><button class="btn sm" id="edit-levels">Modifier les niveaux</button></div>
-    <ol class="level-list">${ex.levels.map((lv, i) => `
-      <li class="${i < ex.current || (i === ex.current && st.done) ? 'done' : i === ex.current ? 'current' : ''}">
-        <span class="num">${i < ex.current || (i === ex.current && st.done) ? '✓' : i + 1}</span>
-        <div class="grow"><div>${esc(lv.name)}</div><div class="muted small">${esc(criterionText(lv, ex.unit))}</div></div>
-      </li>`).join('')}
-    </ol>
-  </div>`;
+  html += `<section>
+    <h2 class="section-title">Progression au niveau actuel</h2>
+    <div class="panel">${chartForLevel(ex)}</div>
+  </section>`;
 
-  html += `<div class="card"><h2>Progression</h2>${sessionsChart(ex, sessions)}</div>`;
+  html += `<section>
+    <h2 class="section-title"><span>Niveaux</span><button class="btn sm" id="edit-levels">Modifier</button></h2>
+    <div class="panel"><ol class="ladder">${ex.levels.map((lv, i) => {
+      const done = i < ex.current || (i === ex.current && st.done);
+      return `<li class="${done ? 'done' : i === ex.current ? 'current' + (st.green ? ' go' : '') : ''}">
+        <span class="rung">${done ? icon('check') : i + 1}</span>
+        <div class="grow"><div class="lname">${esc(lv.name)}</div><div class="small muted num">${esc(criterionText(lv, ex.unit))}</div></div>
+      </li>`;
+    }).join('')}</ol></div>
+  </section>`;
 
-  html += `<div class="card"><h2>Historique</h2>${sessions.length ? `
-    <table class="hist"><thead><tr><th>Date</th><th>Niveau</th><th>Séries</th><th></th></tr></thead><tbody>
-    ${sessions.slice(0, 50).map(s => {
-      const lv = ex.levels[s.level];
-      const ok = lv && sessionValid(s, lv);
-      return `<tr>
-        <td>${fmtDate(s.date)}</td>
-        <td>${s.level >= 0 ? s.level + 1 : '–'}${ok ? ' ✓' : ''}</td>
-        <td>${s.sets.join(' · ')}${s.note ? `<div class="muted small">${esc(s.note)}</div>` : ''}</td>
-        <td><button class="btn sm danger" data-del="${esc(s.id)}" aria-label="Supprimer">✕</button></td>
-      </tr>`;
-    }).join('')}</tbody></table>` : `<p class="muted empty">Aucune séance pour l'instant.</p>`}
-  </div>`;
+  html += `<section>
+    <h2 class="section-title">Historique</h2>
+    <div class="panel">${sessions.length ? `<div class="table-wrap"><table class="hist">
+      <thead><tr><th>Date</th><th>Niv.</th><th>Séries</th><th><span class="sr">Supprimer</span></th></tr></thead><tbody>
+      ${sessions.slice(0, 50).map(s => {
+        const lv = ex.levels[s.level];
+        const ok = lv && sessionValid(s, lv);
+        return `<tr>
+          <td class="num">${fmtDate(s.date)}</td>
+          <td class="num">${s.level >= 0 ? s.level + 1 : '–'}</td>
+          <td style="white-space:normal"><span class="num">${s.sets.join(' · ')}</span>${ok ? ` <span class="small ok">validée</span>` : ''}
+            ${s.note ? `<div class="small muted">${esc(s.note)}</div>` : ''}</td>
+          <td><button class="icon-btn" data-del="${esc(s.id)}" aria-label="Supprimer la séance du ${fmtDate(s.date)}">${icon('x')}</button></td>
+        </tr>`;
+      }).join('')}</tbody></table></div>` : `<p class="empty">Aucune séance pour l'instant.</p>`}
+    </div>
+  </section>`;
 
   main.innerHTML = html;
 
   $('#add-set').onclick = () => {
-    const n = $$('#sets input').length + 1;
+    const n = $$('#sets input').length;
     const inp = document.createElement('input');
-    Object.assign(inp, { type: 'number', min: 0, step: 1, placeholder: 'S' + n });
+    Object.assign(inp, { type: 'number', min: 0, step: 1, placeholder: String(n + 1), id: 'set-' + n });
     inp.inputMode = 'numeric';
-    inp.setAttribute('aria-label', 'Série ' + n);
+    inp.setAttribute('aria-label', 'Série ' + (n + 1));
     $('#add-set').before(inp); inp.focus();
   };
   $('#log-form').onsubmit = e => {
@@ -282,46 +327,63 @@ function renderExercise(main, id) {
     state.sessions.push({ id: uid(), date: f.date.value || today(), exId: ex.id, level: ex.current, sets, note: f.note.value.trim() });
     save();
     const after = levelStatus(ex);
-    toast(after.green && !before.green ? '🟢 Feu vert : tu peux tester le niveau suivant !' : 'Séance enregistrée');
+    toast(after.green && !before.green ? 'Feu vert : tu peux tester le niveau suivant' : 'Séance enregistrée');
     render();
   };
   const up = $('#level-up');
   if (up) up.onclick = () => { ex.current++; save(); toast('Nouveau niveau : ' + ex.levels[ex.current].name); render(); };
   $('#edit-levels').onclick = () => editLevels(ex);
-  $$('[data-del]', main).forEach(b => b.onclick = () => {
-    if (!confirm('Supprimer cette séance ?')) return;
+  $$('[data-del]', main).forEach(b => b.onclick = () => confirmAction('Supprimer cette séance ?', 'Supprimer', () => {
     state.sessions = state.sessions.filter(s => s.id !== b.dataset.del);
     save(); render();
+  }));
+}
+
+// Graphique : meilleure série de chaque séance au niveau actuel, avec la ligne d'objectif.
+function chartForLevel(ex) {
+  const l = ex.levels[ex.current];
+  const list = atLevel(ex);
+  if (!l || list.length < 2) {
+    return `<p class="empty">La courbe apparaîtra après deux séances à ce niveau. La ligne verte marquera l'objectif de ${l ? `${l.target} ${unitLabel(ex.unit)}` : 'ce niveau'}.</p>`;
+  }
+  return lineChart(list.map(s => ({ x: s.date, y: Math.max(...s.sets) })), {
+    target: l.target, unit: unitLabel(ex.unit), label: `Meilleure série par séance, objectif ${l.target} ${unitLabel(ex.unit)}`,
   });
 }
 
-// Graphique simple : meilleure série par séance (toutes séances, tous niveaux).
-function sessionsChart(ex, sessions) {
-  const pts = sessions.slice().reverse().map(s => ({ date: s.date, v: Math.max(...s.sets), level: s.level }));
-  if (pts.length < 2) return `<p class="muted empty">Le graphique apparaîtra après 2 séances.</p>`;
-  return lineChart(pts.map(p => ({ x: p.date, y: p.v })), `Meilleure série (${unitLabel(ex.unit)})`);
+function niceStep(range) {
+  const raw = range / 3;
+  const p = 10 ** Math.floor(Math.log10(raw || 1));
+  return [1, 2, 5, 10].map(m => m * p).find(s => s >= raw) || p * 10;
 }
-
-function lineChart(points, label) {
-  const W = 320, H = 140, P = { l: 30, r: 8, t: 14, b: 18 };
-  const ys = points.map(p => p.y);
+function lineChart(points, { target = null, unit = '', label = '' } = {}) {
+  const W = 320, H = 168, P = { l: 32, r: 12, t: 12, b: 24 };
+  const ys = points.map(p => p.y).concat(target != null ? [target] : []);
   let min = Math.min(...ys), max = Math.max(...ys);
-  if (min === max) { min -= 1; max += 1; }
-  const x = i => P.l + (i * (W - P.l - P.r)) / (points.length - 1);
+  const step = niceStep(max - min || Math.max(1, max * 0.2));
+  min = Math.floor(min / step) * step; max = Math.ceil(max / step) * step;
+  if (min === max) max = min + step;
+  const x = i => P.l + (points.length === 1 ? 0 : (i * (W - P.l - P.r)) / (points.length - 1));
   const y = v => P.t + (1 - (v - min) / (max - min)) * (H - P.t - P.b);
+  const ticks = [];
+  for (let v = min; v <= max + 1e-9; v += step) ticks.push(Math.round(v * 10) / 10);
   const d = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.y).toFixed(1)}`).join(' ');
-  const fmt = v => (Math.round(v * 10) / 10).toString().replace('.', ',');
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">
-    <line class="axis" x1="${P.l}" x2="${W - P.r}" y1="${H - P.b}" y2="${H - P.b}"/>
-    <text x="0" y="${y(max) + 3}">${fmt(max)}</text><text x="0" y="${y(min) + 3}">${fmt(min)}</text>
-    <path class="line" d="${d}" vector-effect="non-scaling-stroke"/>
-    ${points.map((p, i) => `<circle class="dot" cx="${x(i)}" cy="${y(p.y)}" r="2.5"/>`).join('')}
-    <text x="${P.l}" y="${H - 4}">${fmtDate(points[0].x)}</text>
-    <text x="${W - P.r}" y="${H - 4}" text-anchor="end">${fmtDate(points[points.length - 1].x)}</text>
-  </svg><div class="muted small">${esc(label)}</div>`;
+  const area = `${d} L${x(points.length - 1).toFixed(1)},${H - P.b} L${P.l},${H - P.b} Z`;
+  const last = points[points.length - 1];
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">
+    ${ticks.map(v => `<line class="grid" x1="${P.l}" x2="${W - P.r}" y1="${y(v)}" y2="${y(v)}"/>
+      <text x="${P.l - 8}" y="${y(v) + 4}" text-anchor="end">${fr(v)}</text>`).join('')}
+    <path class="area" d="${area}"/>
+    ${target != null ? `<line class="target" x1="${P.l}" x2="${W - P.r}" y1="${y(target)}" y2="${y(target)}"/>
+      <text class="target-label" x="${W - P.r}" y="${y(target) - 6}" text-anchor="end">objectif ${fr(target)} ${esc(unit)}</text>` : ''}
+    <path class="line" d="${d}"/>
+    ${points.map((p, i) => `<circle class="dot${i === points.length - 1 ? ' last' : ''}" cx="${x(i)}" cy="${y(p.y)}" r="${i === points.length - 1 ? 4 : 3}"/>`).join('')}
+    <text x="${P.l}" y="${H - 6}">${fmtDate(points[0].x)}</text>
+    <text x="${W - P.r}" y="${H - 6}" text-anchor="end">${fmtDate(last.x)}</text>
+  </svg>`;
 }
 
-// ---------- Modale : édition des niveaux ----------
+// ---------- Modale ----------
 function openModal(html) {
   const dlg = $('#modal');
   $('#modal-body').innerHTML = html;
@@ -329,40 +391,48 @@ function openModal(html) {
   return dlg;
 }
 function closeModal() { $('#modal').close(); }
+function confirmAction(question, verb, onYes) {
+  openModal(`<h2>${esc(question)}</h2>
+    <div class="actions"><button class="btn" id="c-no">Annuler</button><button class="btn primary" id="c-yes">${esc(verb)}</button></div>`);
+  $('#c-no').onclick = closeModal;
+  $('#c-yes').onclick = () => { closeModal(); onYes(); };
+}
 
 function editLevels(ex) {
-  let draft = { name: ex.name, unit: ex.unit, current: ex.current, levels: ex.levels.map((l, i) => ({ ...l, _src: i })) };
+  const draft = { name: ex.name, unit: ex.unit, current: ex.current, levels: ex.levels.map((l, i) => ({ ...l, _src: i })) };
+  let pendingDelete = null;
   const draw = () => {
+    const u = draft.unit === 'sec' ? 'Secondes' : 'Rép.';
     openModal(`
-      <h2 style="margin-top:0">Modifier « ${esc(ex.name)} »</h2>
+      <h2>Modifier ${esc(ex.name)}</h2>
       <div class="grid2">
         <label class="field"><span>Nom de l'exercice</span><input id="ed-name" value="${esc(draft.name)}"></label>
         <label class="field"><span>Mesuré en</span><select id="ed-unit">
           <option value="reps" ${draft.unit === 'reps' ? 'selected' : ''}>Répétitions</option>
           <option value="sec" ${draft.unit === 'sec' ? 'selected' : ''}>Secondes</option></select></label>
       </div>
-      <p class="muted small">Pour chaque niveau : nombre de séries, ${draft.unit === 'sec' ? 'secondes' : 'répétitions'} par série,
-      et nombre de séances d'affilée à réussir pour obtenir le feu vert.</p>
-      <div id="ed-levels">${draft.levels.map((l, i) => `
-        <div class="card" data-i="${i}" style="padding:10px">
-          <div class="row"><strong class="grow">Niveau ${i + 1}${i === draft.current ? ' · actuel' : ''}</strong>
-            <button class="btn sm" data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="Monter">↑</button>
-            <button class="btn sm" data-act="down" ${i === draft.levels.length - 1 ? 'disabled' : ''} aria-label="Descendre">↓</button>
-            <button class="btn sm danger" data-act="del" ${draft.levels.length <= 1 ? 'disabled' : ''} aria-label="Supprimer">✕</button>
+      <p class="small secondary">Pour chaque niveau : le nombre de séries, ${draft.unit === 'sec' ? 'les secondes' : 'les répétitions'} par série,
+      et le nombre de séances d'affilée à réussir pour obtenir le feu vert.</p>
+      ${draft.levels.map((l, i) => `
+        <div class="level-edit" data-i="${i}">
+          <div class="head"><strong>Niveau ${i + 1}${i === draft.current ? ' · actuel' : ''}</strong>
+            <button class="icon-btn" data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="Monter">${icon('up')}</button>
+            <button class="icon-btn" data-act="down" ${i === draft.levels.length - 1 ? 'disabled' : ''} aria-label="Descendre">${icon('down')}</button>
+            <button class="icon-btn" data-act="del" ${draft.levels.length <= 1 ? 'disabled' : ''} aria-label="Supprimer">${icon('x')}</button>
           </div>
-          <label class="field" style="margin-top:8px"><span>Nom</span><input data-k="name" value="${esc(l.name)}"></label>
+          ${pendingDelete === i ? `<div class="actions"><button class="btn sm" data-act="keep">Garder</button><button class="btn sm primary" data-act="confirm-del">Supprimer ce niveau</button></div>` : ''}
+          <label class="field"><span>Nom</span><input data-k="name" id="ed-${i}-name" value="${esc(l.name)}"></label>
           <div class="grid3">
-            <label class="field"><span>Séries</span><input data-k="sets" type="number" inputmode="numeric" min="1" value="${l.sets}"></label>
-            <label class="field"><span>${draft.unit === 'sec' ? 'Secondes' : 'Rép.'}/série</span><input data-k="target" type="number" inputmode="numeric" min="1" value="${l.target}"></label>
-            <label class="field"><span>Séances</span><input data-k="times" type="number" inputmode="numeric" min="1" value="${l.times}"></label>
+            <label class="field"><span>Séries</span><input data-k="sets" id="ed-${i}-sets" type="number" inputmode="numeric" min="1" value="${l.sets}"></label>
+            <label class="field"><span>${u} par série</span><input data-k="target" id="ed-${i}-target" type="number" inputmode="numeric" min="1" value="${l.target}"></label>
+            <label class="field"><span>Séances</span><input data-k="times" id="ed-${i}-times" type="number" inputmode="numeric" min="1" value="${l.times}"></label>
           </div>
-          ${i !== draft.current ? `<button class="btn sm" data-act="cur">Définir comme niveau actuel</button>` : ''}
+          ${i !== draft.current ? `<div><button class="btn sm" data-act="cur">En faire mon niveau actuel</button></div>` : ''}
         </div>`).join('')}
-      </div>
-      <button class="btn block" id="ed-add">＋ Ajouter un niveau</button>
-      <div class="row" style="margin-top:12px">
-        <button class="btn grow" id="ed-cancel">Annuler</button>
-        <button class="btn primary grow" id="ed-save">Enregistrer</button>
+      <button class="btn block" id="ed-add">${icon('plus')} Ajouter un niveau</button>
+      <div class="actions">
+        <button class="btn" id="ed-cancel">Annuler</button>
+        <button class="btn primary" id="ed-save">Enregistrer</button>
       </div>`);
     const body = $('#modal-body');
     const sync = () => {
@@ -385,14 +455,24 @@ function editLevels(ex) {
         const j = act === 'up' ? i - 1 : i + 1;
         [L[i], L[j]] = [L[j], L[i]];
         if (draft.current === i) draft.current = j; else if (draft.current === j) draft.current = i;
+        pendingDelete = null;
       } else if (act === 'del') {
-        if (!confirm(`Supprimer le niveau « ${L[i].name} » ?`)) return;
+        pendingDelete = i;
+      } else if (act === 'keep') {
+        pendingDelete = null;
+      } else if (act === 'confirm-del') {
         L.splice(i, 1);
         if (draft.current > i || draft.current >= L.length) draft.current = Math.max(0, draft.current - 1);
+        pendingDelete = null;
       } else if (act === 'cur') draft.current = i;
       draw();
     });
-    $('#ed-add').onclick = () => { sync(); const last = draft.levels[draft.levels.length - 1]; draft.levels.push(lvl('Nouveau niveau', last ? last.sets : 3, last ? last.target : 8, last ? last.times : 2)); draw(); };
+    $('#ed-add').onclick = () => {
+      sync();
+      const last = draft.levels[draft.levels.length - 1];
+      draft.levels.push(lvl('Nouveau niveau', last ? last.sets : 3, last ? last.target : 8, last ? last.times : 2));
+      draw();
+    };
     $('#ed-cancel').onclick = closeModal;
     $('#ed-save').onclick = () => {
       sync();
@@ -411,7 +491,7 @@ function editLevels(ex) {
 
 // ---------- Vue : plan hebdomadaire ----------
 const WARMUP = 5;     // minutes
-const BLOCK = 5;     // minutes par exercice dans une séance
+const BLOCK = 5;      // minutes par exercice dans une séance
 function buildPlan() {
   const count = Object.fromEntries(state.exercises.map(e => [e.id, 0]));
   let cursor = 0;
@@ -433,42 +513,42 @@ function buildPlan() {
 function grooveReps(ex) {
   const l = ex.levels[ex.current];
   if (!l) return '';
-  const v = Math.max(1, Math.round(l.target * 0.6));
-  return `${v} ${unitLabel(ex.unit)}`;
+  return `${Math.max(1, Math.round(l.target * 0.6))} ${unitLabel(ex.unit)}`;
 }
 function renderPlan(main) {
   setTitle('Plan de la semaine');
   const total = DAYS.reduce((t, [k]) => t + (parseInt(state.schedule[k], 10) || 0), 0);
-  let html = `<div class="card">
-    <h2>Temps disponible</h2>
-    <p class="muted small">Indique combien de minutes tu peux consacrer à l'entraînement chaque jour (0 = repos).</p>
-    <form id="sched">${DAYS.map(([k, label]) => `
-      <div class="day"><span class="name">${label}</span>
-        <input type="number" inputmode="numeric" min="0" step="5" name="${k}" value="${esc(state.schedule[k])}" aria-label="Minutes le ${label}">
-        <span class="muted small">min</span></div>`).join('')}
-    </form>
-    <div class="muted small" style="margin-top:6px">Total : ${total} min par semaine</div>
-  </div>`;
-
   const plan = buildPlan();
   const counts = Object.fromEntries(state.exercises.map(e => [e.id, 0]));
   plan.forEach(d => d.items.forEach(e => counts[e.id]++));
-  html += plan.map(d => `<div class="card plan-day">
-    <div class="row between"><h3>${d.label}</h3><span class="muted small">${d.min ? d.min + ' min' : 'Repos'}</span></div>
-    ${d.kind === 'repos' ? `<div class="muted small">Récupération.</div>` : d.kind === 'gtg'
-      ? `<div class="muted small">Mini-séances « Grease the Groove » : quelques séries faciles réparties dans la journée, sans échauffement long.</div>`
-      : `<div class="muted small">Échauffement ${WARMUP} min, puis environ ${BLOCK} min par exercice.</div>`}
-    ${d.items.length ? `<ul>${d.items.map(e => `<li><strong>${esc(e.name)}</strong> · ${esc(e.levels[e.current]?.name || '')}
-      <span class="muted small">— séries de ~${grooveReps(e)}, loin de l'échec</span></li>`).join('')}</ul>` : ''}
-  </div>`).join('');
-
   const missing = state.exercises.filter(e => !counts[e.id]);
-  html += `<div class="card"><p class="muted small">Plan générique : chaque exercice est travaillé à environ 60 % de l'objectif du niveau,
-    pour accumuler du volume de qualité sans fatigue (principe du Grease the Groove).
-    Teste ton niveau (séance enregistrée dans l'onglet Exercices) quand tu te sens frais.</p>
-    ${missing.length ? `<p class="small" style="color:var(--orange)">Pas assez de temps cette semaine pour : ${missing.map(e => esc(e.name)).join(', ')}.</p>` : ''}
-  </div>`;
-  main.innerHTML = html;
+
+  main.innerHTML = `
+    <section>
+      <h2 class="section-title"><span>La semaine</span><span class="num">${total} min</span></h2>
+      <div class="panel list">${plan.map(d => `
+        <div class="plan-day${d.kind === 'repos' ? ' rest' : ''}">
+          <div class="row"><span class="dname grow" style="font-weight:500">${d.label}</span>
+            <span class="small muted">${d.kind === 'repos' ? 'Repos' : d.kind === 'gtg' ? 'Séries dans la journée' : `Échauffement ${WARMUP} min`}</span></div>
+          ${d.items.length ? `<ul>${d.items.map(e => `<li><span>${esc(e.name)}</span>
+            <span class="small muted">${esc(e.levels[e.current]?.name || '')}</span>
+            <span class="num">${grooveReps(e)}</span></li>`).join('')}</ul>` : ''}
+        </div>`).join('')}
+      </div>
+      <p class="small muted" style="padding:0 4px">Séries faciles, à environ 60 % de l'objectif du niveau et loin de l'échec, pour accumuler du volume sans fatigue.
+      Fais le test du niveau un jour où tu te sens frais.</p>
+      ${missing.length ? `<p class="small" style="padding:0 4px;color:var(--wait)">Pas assez de temps cette semaine pour : ${missing.map(e => esc(e.name)).join(', ')}.</p>` : ''}
+    </section>
+
+    <section>
+      <h2 class="section-title">Temps disponible</h2>
+      <form class="panel list" id="sched">${DAYS.map(([k, label]) => `
+        <label class="day"><span class="dname">${label}</span>
+          <input type="number" inputmode="numeric" min="0" step="5" name="${k}" id="sched-${k}" value="${esc(state.schedule[k])}" aria-label="Minutes le ${label}">
+          <span class="small muted">min</span></label>`).join('')}
+      </form>
+      <p class="small muted" style="padding:0 4px">0 pour un jour de repos. Le plan se met à jour dès que tu changes une valeur.</p>
+    </section>`;
 
   $$('#sched input').forEach(inp => inp.addEventListener('change', () => {
     state.schedule[inp.name] = Math.max(0, parseInt(inp.value, 10) || 0);
@@ -480,7 +560,6 @@ function renderPlan(main) {
 function renderProfile(main) {
   setTitle('Profil');
   const ms = state.profile.measurements.slice().sort((a, b) => a.date.localeCompare(b.date));
-  const last = ms[ms.length - 1], first = ms[0];
   // Pour chaque mesure : sa valeur la plus récente et l'écart depuis la première.
   const series = k => ms.filter(m => m[k] != null);
   const latest = Object.fromEntries(MEASURES.map(([k]) => { const s = series(k); return [k, s[s.length - 1]]; }));
@@ -488,45 +567,56 @@ function renderProfile(main) {
     const s = series(k);
     if (s.length < 2) return '';
     const d = Math.round((s[s.length - 1][k] - s[0][k]) * 10) / 10;
-    return `<span class="muted small">(${d > 0 ? '+' : ''}${String(d).replace('.', ',')} depuis le ${fmtDate(s[0].date)})</span>`;
+    return `${d > 0 ? '+' : ''}${fr(d)} depuis le ${fmtDate(s[0].date)}`;
   };
   let imc = '';
   const t = parseFloat(state.profile.taille);
-  if (t && latest.poids) imc = (latest.poids.poids / ((t / 100) ** 2)).toFixed(1).replace('.', ',');
+  if (t && latest.poids) imc = fr((latest.poids.poids / ((t / 100) ** 2)).toFixed(1));
 
-  let html = `<div class="card">
-    <h2>Taille</h2>
-    <div class="row"><input id="taille" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(state.profile.taille)}" style="max-width:120px" aria-label="Taille en cm"><span class="muted">cm</span>
-    ${imc ? `<span class="muted small grow" style="text-align:right">IMC ${imc}</span>` : ''}</div>
-  </div>`;
-
-  if (last) {
-    html += `<div class="card"><h2>Dernières mesures</h2>
-      <table class="hist"><tbody>${MEASURES.filter(([k]) => latest[k]).map(([k, label, u]) =>
-        `<tr><td>${label}</td><td><strong>${String(latest[k][k]).replace('.', ',')} ${u}</strong>
-        <span class="muted small">le ${fmtDate(latest[k].date)}</span><br>${delta(k)}</td></tr>`).join('')}</tbody></table></div>`;
-    const wpts = ms.filter(m => m.poids != null).map(m => ({ x: m.date, y: m.poids }));
-    if (wpts.length >= 2) html += `<div class="card"><h2>Poids</h2>${lineChart(wpts, 'Poids (kg)')}</div>`;
-  }
-
-  html += `<div class="card"><h2>Nouvelle mesure</h2>
-    <form id="m-form">
-      <label class="field"><span>Date</span><input type="date" name="date" value="${today()}" required></label>
-      <div class="grid2">${MEASURES.map(([k, label, u]) => `
-        <label class="field"><span>${label} (${u})</span><input type="number" inputmode="decimal" step="0.1" min="0" name="${k}"></label>`).join('')}
-      </div>
-      <button class="btn primary block" type="submit">Enregistrer la mesure</button>
-    </form>
-    <p class="muted small">Remplis seulement ce que tu mesures. Astuce : mesure-toi le matin, à jeun, toujours au même endroit.</p>
-  </div>`;
+  let html = `<section>
+    <h2 class="section-title">Taille</h2>
+    <div class="panel row">
+      <input id="taille" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(state.profile.taille)}" style="max-width:120px" aria-label="Taille en cm">
+      <span class="muted">cm</span>
+      ${imc ? `<span class="grow small secondary" style="text-align:right">IMC <span class="num">${imc}</span></span>` : ''}
+    </div>
+  </section>`;
 
   if (ms.length) {
-    html += `<div class="card"><h2>Historique</h2><div style="overflow-x:auto"><table class="hist">
-      <thead><tr><th>Date</th>${MEASURES.map(([, label]) => `<th>${label.replace('Tour de ', '')}</th>`).join('')}<th></th></tr></thead>
-      <tbody>${ms.slice().reverse().map(m => `<tr><td>${fmtDate(m.date)}</td>${MEASURES.map(([k]) =>
-        `<td>${m[k] != null ? String(m[k]).replace('.', ',') : '–'}</td>`).join('')}
-        <td><button class="btn sm danger" data-mdel="${esc(m.id)}" aria-label="Supprimer">✕</button></td></tr>`).join('')}
-      </tbody></table></div></div>`;
+    html += `<section>
+      <h2 class="section-title">Dernières mesures</h2>
+      <div class="panel list"><div class="table-wrap"><table class="hist"><tbody>
+        ${MEASURES.filter(([k]) => latest[k]).map(([k, label, u]) => `<tr>
+          <td>${label}<div class="small muted">${delta(k) || 'le ' + fmtDate(latest[k].date)}</div></td>
+          <td class="num" style="font-size:16px">${fr(latest[k][k])} <span class="muted">${u}</span></td></tr>`).join('')}
+      </tbody></table></div></div>
+    </section>`;
+    const wpts = series('poids').map(m => ({ x: m.date, y: m.poids }));
+    if (wpts.length >= 2) html += `<section><h2 class="section-title">Poids</h2><div class="panel">${lineChart(wpts, { unit: 'kg', label: 'Évolution du poids en kg' })}</div></section>`;
+  }
+
+  html += `<section>
+    <h2 class="section-title">Nouvelle mesure</h2>
+    <form class="panel form" id="m-form">
+      <label class="field"><span>Date</span><input type="date" name="date" id="m-date" value="${today()}" required></label>
+      <div class="grid2">${MEASURES.map(([k, label, u]) => `
+        <label class="field"><span>${label} (${u})</span><input type="number" inputmode="decimal" step="0.1" min="0" name="${k}" id="m-${k}"></label>`).join('')}
+      </div>
+      <button class="btn primary block" type="submit">Enregistrer la mesure</button>
+      <p class="small muted">Remplis seulement ce que tu mesures. Mesure-toi le matin, à jeun, toujours au même endroit.</p>
+    </form>
+  </section>`;
+
+  if (ms.length) {
+    html += `<section>
+      <h2 class="section-title">Historique</h2>
+      <div class="panel"><div class="table-wrap"><table class="hist">
+        <thead><tr><th>Date</th>${MEASURES.map(([, label]) => `<th>${label.replace('Tour de ', '')}</th>`).join('')}<th></th></tr></thead>
+        <tbody>${ms.slice().reverse().map(m => `<tr><td class="num">${fmtDate(m.date)}</td>${MEASURES.map(([k]) =>
+          `<td class="num">${m[k] != null ? fr(m[k]) : '–'}</td>`).join('')}
+          <td><button class="icon-btn" data-mdel="${esc(m.id)}" aria-label="Supprimer la mesure du ${fmtDate(m.date)}">${icon('x')}</button></td></tr>`).join('')}
+        </tbody></table></div></div>
+    </section>`;
   }
   main.innerHTML = html;
 
@@ -544,11 +634,10 @@ function renderProfile(main) {
     state.profile.measurements.push(m);
     save(); toast('Mesure enregistrée'); render();
   };
-  $$('[data-mdel]', main).forEach(b => b.onclick = () => {
-    if (!confirm('Supprimer cette mesure ?')) return;
+  $$('[data-mdel]', main).forEach(b => b.onclick = () => confirmAction('Supprimer cette mesure ?', 'Supprimer', () => {
     state.profile.measurements = state.profile.measurements.filter(m => m.id !== b.dataset.mdel);
     save(); render();
-  });
+  }));
 }
 
 // ---------- Vue : réglages ----------
@@ -556,26 +645,30 @@ function renderSettings(main) {
   setTitle('Réglages');
   const nS = state.sessions.length, nM = state.profile.measurements.length;
   main.innerHTML = `
-    <div class="card">
-      <h2>Sauvegarde</h2>
-      <p class="muted small">Tes données restent sur cet appareil (${nS} séance${nS > 1 ? 's' : ''}, ${nM} mesure${nM > 1 ? 's' : ''}).
-      Exporte-les régulièrement, et utilise l'import pour les transférer entre ton iPhone et ton PC.</p>
-      <div class="row wrap">
-        <button class="btn primary" id="export">Exporter</button>
-        <label class="btn">Importer<input type="file" id="import" accept="application/json,.json" hidden></label>
+    <section>
+      <h2 class="section-title">Sauvegarde</h2>
+      <div class="panel" style="display:grid;gap:16px">
+        <p class="secondary">Tes données restent sur cet appareil : <span class="num">${nS}</span> séance${nS > 1 ? 's' : ''} et <span class="num">${nM}</span> mesure${nM > 1 ? 's' : ''}.
+        Exporte-les régulièrement, et utilise l'import pour passer de ton iPhone à ton PC.</p>
+        <div class="grid2">
+          <button class="btn primary" id="export">Exporter</button>
+          <label class="btn">Importer<input type="file" id="import" accept="application/json,.json" hidden></label>
+        </div>
       </div>
-    </div>
-    <div class="card">
-      <h2>Installer sur iPhone</h2>
-      <p class="muted small">Dans Safari : bouton Partager, puis « Sur l'écran d'accueil ». L'appli s'ouvre alors en plein écran et marche hors ligne.
-      Utilise toujours l'icône de l'écran d'accueil : c'est là que tes données sont conservées.</p>
-    </div>
-    <div class="card">
-      <h2>Réinitialiser</h2>
-      <p class="muted small">Efface toutes les séances, mesures et niveaux personnalisés de cet appareil.</p>
-      <button class="btn danger" id="reset">Tout effacer</button>
-    </div>
-    <p class="muted small" style="text-align:center">Grease the Groove · version ${APP_VERSION}</p>`;
+    </section>
+    <section>
+      <h2 class="section-title">Installer sur iPhone</h2>
+      <div class="panel"><p class="secondary">Dans Safari, touche Partager puis « Sur l'écran d'accueil ». L'appli s'ouvre alors en plein écran et marche hors ligne.
+      Ouvre-la toujours depuis cette icône : c'est là que tes données sont conservées.</p></div>
+    </section>
+    <section>
+      <h2 class="section-title">Réinitialiser</h2>
+      <div class="panel" style="display:grid;gap:16px">
+        <p class="secondary">Efface les séances, les mesures et les niveaux personnalisés de cet appareil. Pense à exporter avant.</p>
+        <div><button class="btn" id="reset" style="color:var(--stop)">Tout effacer</button></div>
+      </div>
+    </section>
+    <p class="small muted num" style="text-align:center">Grease the Groove ${APP_VERSION}</p>`;
 
   $('#export').onclick = async () => {
     const json = JSON.stringify({ app: 'grease-the-groove', exportedAt: new Date().toISOString(), data: state }, null, 2);
@@ -592,20 +685,20 @@ function renderSettings(main) {
   };
   $('#import').onchange = async e => {
     const file = e.target.files[0];
+    e.target.value = '';
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
       const data = parsed.data || parsed;
       if (!Array.isArray(data.exercises)) throw new Error('format');
-      if (!confirm('Remplacer les données de cet appareil par celles du fichier ?')) return;
-      state = migrate(data); save(); toast('Données importées'); go('exercices');
-    } catch (err) { toast('Fichier invalide'); }
-    e.target.value = '';
+      confirmAction('Remplacer les données de cet appareil par celles du fichier ?', 'Remplacer', () => {
+        state = migrate(data); save(); toast('Données importées'); go('exercices');
+      });
+    } catch (err) { toast("Ce fichier n'est pas une sauvegarde de l'appli"); }
   };
-  $('#reset').onclick = () => {
-    if (!confirm('Effacer toutes les données de cet appareil ? Pense à exporter avant.')) return;
+  $('#reset').onclick = () => confirmAction('Effacer toutes les données de cet appareil ?', 'Tout effacer', () => {
     state = defaultState(); save(); toast('Données effacées'); go('exercices');
-  };
+  });
 }
 
 // ---------- Démarrage ----------

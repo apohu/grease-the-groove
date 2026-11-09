@@ -1,7 +1,8 @@
 // Service worker : met l'appli en cache pour qu'elle marche hors ligne.
-const CACHE = 'gtg-v0.1.0';
+const CACHE = 'gtg-v0.2.0';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
-  'icons/icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png'];
+  'icons/icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png',
+  'fonts/plex-sans.woff2', 'fonts/plex-mono-400.woff2', 'fonts/plex-mono-500.woff2'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
