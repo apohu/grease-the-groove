@@ -4,7 +4,7 @@
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.3.0';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -37,28 +37,31 @@ const ICONS = {
 };
 const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 
-// Niveaux génériques de départ : à remplacer par ceux du livre.
-function lvl(name, sets, target, times = 2) { return { name, sets, target, times }; }
+// Niveaux des tractions : livre « Mon programme de callisthénie », dictés par Arthur.
+// Les autres exercices ont des niveaux génériques, à remplacer par ceux du livre.
+function lvl(name, target, extra = {}) { return { name, sets: 1, target, times: 1, ...extra }; }
+function bookTractions() {
+  return [
+    lvl('Tractions australiennes', 15, { cond: 'Corps presque à l\'horizontale par rapport au support' }),
+    lvl('Suspension', 30, { unit: 'sec', bis: true, cond: 'Tenue confortable, sans glisser' }),
+    lvl('Tractions avec élastique', 6, { optional: true, cond: 'Tu sens que tu maîtrises le mouvement. Quelques semaines au plus, sans t\'y attarder' }),
+    lvl('Tractions négatives', 6, { cond: 'Chaque descente dure au moins 10 s, et tu sais stopper la descente 2 à 3 s en tout point' }),
+    lvl('Tractions', 10, { cond: 'Amplitude complète' }),
+  ];
+}
 function defaultExercises() {
   return [
-    { id: 'tractions', name: 'Tractions', unit: 'reps', current: 0, levels: [
-      lvl('Tractions australiennes', 3, 10), lvl('Tractions négatives', 3, 5),
-      lvl('Tractions classiques', 3, 8) ] },
+    { id: 'tractions', name: 'Tractions', unit: 'reps', current: 0, levels: bookTractions(), fromBook: true },
     { id: 'pompes', name: 'Pompes', unit: 'reps', current: 0, levels: [
-      lvl('Pompes inclinées', 3, 12), lvl('Pompes sur les genoux', 3, 12),
-      lvl('Pompes classiques', 3, 15) ] },
+      lvl('Pompes inclinées', 15), lvl('Pompes sur les genoux', 15), lvl('Pompes', 15) ] },
     { id: 'pistol', name: 'Pistol squat', unit: 'reps', current: 0, levels: [
-      lvl('Squat au poids du corps', 3, 20), lvl('Pistol squat assisté', 3, 6),
-      lvl('Pistol squat', 3, 5) ] },
+      lvl('Squat au poids du corps', 20), lvl('Pistol squat assisté', 6), lvl('Pistol squat', 5) ] },
     { id: 'gainage', name: 'Gainage', unit: 'sec', current: 0, levels: [
-      lvl('Planche sur les genoux', 3, 45), lvl('Planche', 3, 60),
-      lvl('Planche bras tendus, une jambe levée', 3, 45) ] },
+      lvl('Planche sur les genoux', 45), lvl('Planche', 60), lvl('Planche, une jambe levée', 45) ] },
     { id: 'dips', name: 'Dips', unit: 'reps', current: 0, levels: [
-      lvl('Dips sur banc', 3, 12), lvl('Dips négatifs', 3, 5),
-      lvl('Dips aux barres parallèles', 3, 8) ] },
+      lvl('Dips sur banc', 15), lvl('Dips négatifs', 6), lvl('Dips aux barres parallèles', 10) ] },
     { id: 'lsit', name: 'L-sit', unit: 'sec', current: 0, levels: [
-      lvl('Tuck sit (genoux pliés)', 3, 15), lvl('L-sit une jambe tendue', 3, 10),
-      lvl('L-sit', 3, 15) ] },
+      lvl('Tuck sit (genoux pliés)', 15), lvl('L-sit une jambe tendue', 10), lvl('L-sit', 15) ] },
   ];
 }
 
@@ -84,6 +87,12 @@ function load() {
 }
 function migrate(s) {
   const d = defaultState();
+  // Remplace les anciens niveaux génériques des tractions par ceux du livre, s'ils n'ont pas servi.
+  const tr = Array.isArray(s.exercises) && s.exercises.find(e => e.id === 'tractions');
+  if (tr && !tr.fromBook && !(s.sessions || []).some(x => x.exId === 'tractions')
+      && tr.levels.map(l => l.name).join('|') === 'Tractions australiennes|Tractions négatives|Tractions classiques') {
+    Object.assign(tr, { levels: bookTractions(), current: 0, fromBook: true });
+  }
   return {
     ...d, ...s,
     profile: { ...d.profile, ...(s.profile || {}) },
@@ -125,42 +134,69 @@ function toast(msg) {
   setTimeout(() => t.remove(), 2400);
 }
 const exById = id => state.exercises.find(e => e.id === id);
-const setsText = (l, unit) => `${l.sets} × ${l.target} ${unitLabel(unit)}`;
+const lvUnit = (ex, l) => (l && l.unit) || ex.unit;
+const setsText = (l, unit) => `${l.sets > 1 ? `${l.sets} × ` : ''}${l.target} ${unitLabel(unit)}`;
 function criterionText(l, unit) {
   return `${setsText(l, unit)}${l.times > 1 ? `, ${l.times} séances d'affilée` : ''}`;
 }
 
+// ---------- Étapes ----------
+// Une étape = un niveau suivi de ses niveaux « bis » : tous doivent être validés pour avancer.
+function stepRange(ex, i) {
+  let a = i, b = i;
+  while (a > 0 && ex.levels[a] && ex.levels[a].bis) a--;
+  while (ex.levels[b + 1] && ex.levels[b + 1].bis) b++;
+  return [a, b];
+}
+const stepIdx = (ex, a) => { const [s, e] = stepRange(ex, a); return Array.from({ length: e - s + 1 }, (_, k) => s + k); };
+const stepCount = ex => ex.levels.filter((l, i) => i === 0 || !l.bis).length;
+const stepNo = (ex, i) => ex.levels.slice(0, i + 1).filter((l, k) => k === 0 || !l.bis).length;
+const levelLabel = (ex, i) => (i > 0 && ex.levels[i].bis ? `${stepNo(ex, i)}bis` : String(stepNo(ex, i)));
+function stepStarts(ex) { return ex.levels.map((l, i) => i).filter(i => i === 0 || !ex.levels[i].bis); }
+
 // ---------- Feu vert ----------
-// Une séance valide le niveau si elle contient au moins `sets` séries ≥ `target`.
-// Le feu vert s'allume quand les `times` dernières séances à ce niveau sont toutes valides.
+// Une séance valide un niveau si elle contient au moins `sets` séries ≥ `target`
+// et, si le niveau a une condition de forme, si « forme respectée » est cochée.
+// Un niveau est validé quand ses `times` dernières séances sont valides (1 par défaut : une réussite suffit).
 function sessionValid(sess, l) {
+  if (l.cond && sess.formOk !== true) return false;
   return sess.sets.filter(v => v >= l.target).length >= l.sets;
 }
-function atLevel(ex) {
+function atLevel(ex, i = ex.current) {
   return state.sessions
-    .filter(s => s.exId === ex.id && s.level === ex.current)
+    .filter(s => s.exId === ex.id && s.level === i)
     .sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
 }
-// state : off (aucune séance), stop (dernière séance non validée), wait (en cours), go (feu vert)
-function levelStatus(ex) {
-  const l = ex.levels[ex.current];
-  if (!l) return { state: 'off', label: 'Aucun niveau' };
-  const list = atLevel(ex);
+function levelState(ex, i) {
+  const l = ex.levels[i];
+  const list = atLevel(ex, i);
   const need = Math.max(1, l.times || 1);
-  if (!list.length) return { state: 'off', label: 'Pas encore de séance à ce niveau', streak: 0, need };
   let streak = 0;
-  for (let i = list.length - 1; i >= 0 && sessionValid(list[i], l); i--) streak++;
-  const isLast = ex.current >= ex.levels.length - 1;
-  if (streak >= need) {
+  for (let k = list.length - 1; k >= 0 && sessionValid(list[k], l); k--) streak++;
+  if (streak >= need) return 'go';
+  if (!list.length) return 'off';
+  return streak ? 'wait' : 'stop';
+}
+// state : off (aucune séance), stop (critère pas encore atteint), wait (en partie validé), go (feu vert)
+function levelStatus(ex) {
+  if (!ex.levels[ex.current]) return { state: 'off', label: 'Aucun niveau' };
+  const idx = stepIdx(ex, ex.current);
+  const states = idx.map(i => levelState(ex, i));
+  const v = states.filter(x => x === 'go').length;
+  const n = idx.length;
+  const isLast = idx[n - 1] >= ex.levels.length - 1;
+  if (v === n) {
     return isLast
-      ? { state: 'go', label: 'Dernier niveau maîtrisé', streak, need, done: true }
-      : { state: 'go', label: 'Feu vert pour le niveau suivant', streak, need, green: true };
+      ? { state: 'go', label: 'Dernier niveau maîtrisé', done: true }
+      : { state: 'go', label: 'Feu vert pour le niveau suivant', green: true };
   }
-  if (!streak) return { state: 'stop', label: `Critère pas encore atteint, 0 sur ${need}`, streak, need };
-  return { state: 'wait', label: `${streak} séance validée sur ${need}`, streak, need };
+  if (states.every(x => x === 'off')) return { state: 'off', label: 'Pas encore de séance à ce niveau' };
+  if (v || states.includes('wait')) return { state: 'wait', label: n > 1 ? `${v} exercice${v > 1 ? 's' : ''} validé${v > 1 ? 's' : ''} sur ${n}` : 'En cours de validation' };
+  return { state: 'stop', label: 'Critère pas encore atteint' };
 }
 const signal = (st, lg = false) =>
   `<span class="signal${lg ? ' lg' : ''}" data-state="${st.state}" role="img" aria-label="${esc(st.label)}"><i></i><i></i><i></i></span>`;
+const stateLabel = { go: 'Validé', wait: 'En cours', stop: 'Pas encore atteint', off: 'À faire' };
 
 // ---------- Navigation ----------
 let route = { tab: 'exercices', view: null, id: null };
@@ -195,29 +231,32 @@ function render() {
 function renderExercises(main) {
   setTitle('Exercices');
   const greens = state.exercises.filter(e => levelStatus(e).green).length;
+  const toReview = state.exercises.filter(e => !e.fromBook).map(e => e.name);
   let html = '';
-  if (!state.settings.levelsReviewed) {
+  if (!state.settings.levelsReviewed && toReview.length) {
     html += `<div class="notice">
-      <p><strong>Niveaux à personnaliser.</strong> Les niveaux et critères de départ sont génériques.
-      Remplace-les par ceux de ton livre depuis la fiche de chaque exercice, avec « Modifier ».</p>
-      <div><button class="btn sm" id="dismiss-levels">C'est fait</button></div>
+      <p><strong>Niveaux à reprendre du livre.</strong> ${esc(toReview.join(', '))} : niveaux génériques pour l'instant.
+      Remplace-les depuis la fiche de l'exercice, avec « Modifier ».</p>
+      <div><button class="btn sm" id="dismiss-levels">Masquer</button></div>
     </div>`;
   }
   html += `<section>
     <h2 class="section-title"><span>Les six bases</span><span class="num">${greens ? `${greens} feu${greens > 1 ? 'x' : ''} vert${greens > 1 ? 's' : ''}` : ''}</span></h2>
     <div class="panel list">${state.exercises.map(ex => {
-      const l = ex.levels[ex.current];
       const st = levelStatus(ex);
+      const idx = ex.levels[ex.current] ? stepIdx(ex, ex.current) : [];
+      const starts = stepStarts(ex);
+      const cur = starts.indexOf(idx[0]);
       return `<a class="ex-row" href="#" data-ex="${esc(ex.id)}">
         ${signal(st)}
         <div class="grow">
           <div class="row" style="gap:8px;align-items:baseline">
             <span class="name grow">${esc(ex.name)}</span>
-            <span class="num small muted">N${ex.current + 1}/${ex.levels.length}</span>
+            <span class="num small muted">N${cur + 1}/${starts.length}</span>
           </div>
-          <div class="small secondary">${l ? esc(l.name) : '—'}${l ? ` · <span class="num">${esc(setsText(l, ex.unit))}</span>` : ''}</div>
-          <div class="rungs" aria-hidden="true">${ex.levels.map((_, i) =>
-            `<span class="${i < ex.current || (i === ex.current && st.done) ? 'done' : i === ex.current ? 'current' + (st.green ? ' go' : '') : ''}"></span>`).join('')}</div>
+          <div class="small secondary">${idx.map(i => `${esc(ex.levels[i].name)} · <span class="num">${esc(setsText(ex.levels[i], lvUnit(ex, ex.levels[i])))}</span>`).join('<br>') || '—'}</div>
+          <div class="rungs" aria-hidden="true">${starts.map((_, k) =>
+            `<span class="${k < cur || (k === cur && st.done) ? 'done' : k === cur ? 'current' + (st.green ? ' go' : '') : ''}"></span>`).join('')}</div>
         </div>
         ${icon('chevronRight', 'chev')}
       </a>`;
@@ -230,39 +269,58 @@ function renderExercises(main) {
 }
 
 // ---------- Vue : fiche d'un exercice ----------
+const logChoice = {}; // niveau choisi dans le formulaire quand l'étape en compte plusieurs
 function renderExercise(main, id) {
   const ex = exById(id);
   if (!ex) return go('exercices');
   setTitle(ex.name, () => go('exercices'));
-  const l = ex.levels[ex.current];
+  const hasLevel = !!ex.levels[ex.current];
   const st = levelStatus(ex);
+  const idx = hasLevel ? stepIdx(ex, ex.current) : [];
+  const base = ex.levels[idx[0]];
+  const nextI = hasLevel ? idx[idx.length - 1] + 1 : -1;
+  const next = ex.levels[nextI];
   const sessions = state.sessions.filter(s => s.exId === ex.id)
     .sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id));
-  const nSets = l ? Math.max(l.sets, 1) : 3;
-  const next = ex.levels[ex.current + 1];
+  if (!idx.includes(logChoice[ex.id])) logChoice[ex.id] = idx.find(i => levelState(ex, i) !== 'go') ?? idx[0];
+  const selI = logChoice[ex.id];
+  const sel = ex.levels[selI];
+  const selU = sel ? lvUnit(ex, sel) : ex.unit;
+  const nSets = sel ? Math.max(sel.sets, 1) : 1;
 
   let html = `<div class="level-head">
-    <div class="small muted num">Niveau ${ex.current + 1} sur ${ex.levels.length}</div>
-    <h2>${l ? esc(l.name) : 'Aucun niveau défini'}</h2>
-    ${l ? `<div class="secondary">Objectif <span class="num">${esc(criterionText(l, ex.unit))}</span></div>` : ''}
+    <div class="small muted num">Niveau ${hasLevel ? stepNo(ex, idx[0]) : 0} sur ${stepCount(ex)}${base && base.optional ? ' · optionnel' : ''}</div>
+    <h2>${hasLevel ? idx.map(i => esc(ex.levels[i].name)).join(' et ') : 'Aucun niveau défini'}</h2>
   </div>`;
 
-  html += `<div class="panel" style="display:grid;gap:16px">
-    <div class="status${st.state === 'go' ? ' go' : ''}">${signal(st, true)}<div class="grow">
-      <div style="font-weight:500">${esc(st.label)}</div>
-      ${st.green ? `<div class="small secondary">Prochain niveau : ${esc(next.name)}</div>` : ''}
-      ${st.done ? `<div class="small secondary">Ajoute un niveau avec « Modifier » pour continuer.</div>` : ''}
-      ${!st.green && !st.done && l ? `<div class="small secondary">Il faut ${l.sets} séries d'au moins <span class="num">${l.target} ${unitLabel(ex.unit)}</span> dans une même séance.</div>` : ''}
-    </div></div>
-    ${st.green ? `<button class="btn go block" id="level-up">Passer à ${esc(next.name)}</button>` : ''}
-  </div>`;
+  if (hasLevel) {
+    html += `<div class="panel" style="display:grid;gap:16px">
+      <div class="status${st.state === 'go' ? ' go' : ''}">${signal(st, true)}<div class="grow">
+        <div style="font-weight:500">${esc(st.label)}</div>
+        ${st.green ? `<div class="small secondary">Prochain niveau : ${esc(next.name)}</div>` : ''}
+        ${st.done ? `<div class="small secondary">Ajoute un niveau avec « Modifier » pour continuer.</div>` : ''}
+        ${!st.green && !st.done ? `<div class="small secondary">${idx.length > 1 ? 'Valide chacun des exercices ci-dessous, une fois suffit.' : 'Réussis le critère une fois pour obtenir le feu vert.'}</div>` : ''}
+      </div></div>
+      <div class="criteria">${idx.map(i => {
+        const l = ex.levels[i]; const ls = levelState(ex, i);
+        return `<div class="crit"><div class="row" style="gap:8px;align-items:baseline">
+            <span class="grow" style="font-weight:500">${idx.length > 1 ? `<span class="num muted">${levelLabel(ex, i)}</span> ` : ''}${esc(l.name)}</span>
+            <span class="small ${ls === 'go' ? 'ok' : 'muted'}">${stateLabel[ls]}</span></div>
+          <div class="small secondary"><span class="num">${esc(criterionText(l, lvUnit(ex, l)))}</span>${l.cond ? ` · ${esc(l.cond)}` : ''}</div></div>`;
+      }).join('')}</div>
+      ${st.green ? `<button class="btn go block" id="level-up">Passer à ${esc(next.name)}</button>` : ''}
+      ${base.optional && !st.green && next ? `<button class="btn block" id="skip-level">Sauter ce niveau optionnel</button>` : ''}
+    </div>`;
+  }
 
   html += `<section>
     <h2 class="section-title">Enregistrer une séance</h2>
     <form class="panel form" id="log-form">
-      <div class="field"><span>Séries en ${unitLong(ex.unit)}</span>
+      ${idx.length > 1 ? `<div class="field"><span>Exercice</span><div class="seg" role="radiogroup">${idx.map(i =>
+        `<button type="button" role="radio" aria-checked="${i === selI}" class="${i === selI ? 'on' : ''}" data-pick="${i}">${esc(ex.levels[i].name)}</button>`).join('')}</div></div>` : ''}
+      <div class="field"><span>${nSets > 1 ? 'Séries' : 'Résultat'} en ${unitLong(selU)}</span>
         <div class="sets" id="sets">${Array.from({ length: nSets }, (_, i) =>
-          `<input type="number" inputmode="numeric" min="0" step="1" placeholder="${i + 1}" aria-label="Série ${i + 1}" id="set-${i}">`).join('')}
+          `<input type="number" inputmode="numeric" min="0" step="1" placeholder="${nSets > 1 ? i + 1 : ''}" aria-label="Série ${i + 1}" id="set-${i}">`).join('')}
           <button type="button" class="btn" id="add-set" aria-label="Ajouter une série">${icon('plus')}</button>
         </div>
       </div>
@@ -270,22 +328,28 @@ function renderExercise(main, id) {
         <label class="field"><span>Date</span><input type="date" name="date" id="log-date" value="${today()}" required></label>
         <label class="field"><span>Note</span><input type="text" name="note" id="log-note" placeholder="Facultatif"></label>
       </div>
-      <button class="btn primary block" type="submit" ${l ? '' : 'disabled'}>Enregistrer</button>
+      ${sel && sel.cond ? `<label class="check"><input type="checkbox" name="formOk" id="log-form-ok">
+        <span><span style="font-weight:500">Forme respectée</span><span class="small secondary" style="display:block">${esc(sel.cond)}</span></span></label>` : ''}
+      <button class="btn primary block" type="submit" ${sel ? '' : 'disabled'}>Enregistrer</button>
     </form>
   </section>`;
 
   html += `<section>
     <h2 class="section-title">Progression au niveau actuel</h2>
-    <div class="panel">${chartForLevel(ex)}</div>
+    ${idx.length ? idx.map(i => `<div class="panel">${idx.length > 1 ? `<div class="small secondary" style="margin-bottom:8px">${esc(ex.levels[i].name)}</div>` : ''}${chartForLevel(ex, i)}</div>`).join('') : ''}
   </section>`;
 
   html += `<section>
     <h2 class="section-title"><span>Niveaux</span><button class="btn sm" id="edit-levels">Modifier</button></h2>
     <div class="panel"><ol class="ladder">${ex.levels.map((lv, i) => {
-      const done = i < ex.current || (i === ex.current && st.done);
-      return `<li class="${done ? 'done' : i === ex.current ? 'current' + (st.green ? ' go' : '') : ''}">
-        <span class="rung">${done ? icon('check') : i + 1}</span>
-        <div class="grow"><div class="lname">${esc(lv.name)}</div><div class="small muted num">${esc(criterionText(lv, ex.unit))}</div></div>
+      const done = i < idx[0] || (idx.includes(i) && levelState(ex, i) === 'go' && st.done);
+      const current = idx.includes(i);
+      const okHere = current && levelState(ex, i) === 'go';
+      return `<li class="${done ? 'done' : current ? 'current' + (okHere ? ' go' : '') : ''}${lv.bis ? ' bis' : ''}">
+        <span class="rung">${done || okHere ? icon('check') : levelLabel(ex, i)}</span>
+        <div class="grow"><div class="lname">${esc(lv.name)}${lv.optional ? ' <span class="small muted">· optionnel</span>' : ''}${lv.bis ? ` <span class="small muted">· avec le niveau ${stepNo(ex, i)}</span>` : ''}</div>
+          <div class="small muted num">${esc(criterionText(lv, lvUnit(ex, lv)))}</div>
+          ${lv.cond ? `<div class="small muted">${esc(lv.cond)}</div>` : ''}</div>
       </li>`;
     }).join('')}</ol></div>
   </section>`;
@@ -293,14 +357,15 @@ function renderExercise(main, id) {
   html += `<section>
     <h2 class="section-title">Historique</h2>
     <div class="panel">${sessions.length ? `<div class="table-wrap"><table class="hist">
-      <thead><tr><th>Date</th><th>Niv.</th><th>Séries</th><th><span class="sr">Supprimer</span></th></tr></thead><tbody>
+      <thead><tr><th>Date</th><th>Niv.</th><th>Résultat</th><th><span class="sr">Supprimer</span></th></tr></thead><tbody>
       ${sessions.slice(0, 50).map(s => {
         const lv = ex.levels[s.level];
         const ok = lv && sessionValid(s, lv);
         return `<tr>
           <td class="num">${fmtDate(s.date)}</td>
-          <td class="num">${s.level >= 0 ? s.level + 1 : '–'}</td>
-          <td style="white-space:normal"><span class="num">${s.sets.join(' · ')}</span>${ok ? ` <span class="small ok">validée</span>` : ''}
+          <td class="num">${lv ? levelLabel(ex, s.level) : '–'}</td>
+          <td style="white-space:normal"><span class="num">${s.sets.join(' · ')} ${lv ? unitLabel(lvUnit(ex, lv)) : ''}</span>${ok ? ` <span class="small ok">validé</span>` : ''}
+            ${lv ? `<div class="small muted">${esc(lv.name)}</div>` : ''}
             ${s.note ? `<div class="small muted">${esc(s.note)}</div>` : ''}</td>
           <td><button class="icon-btn" data-del="${esc(s.id)}" aria-label="Supprimer la séance du ${fmtDate(s.date)}">${icon('x')}</button></td>
         </tr>`;
@@ -310,6 +375,7 @@ function renderExercise(main, id) {
 
   main.innerHTML = html;
 
+  $$('[data-pick]', main).forEach(b => b.onclick = () => { logChoice[ex.id] = +b.dataset.pick; render(); });
   $('#add-set').onclick = () => {
     const n = $$('#sets input').length;
     const inp = document.createElement('input');
@@ -321,17 +387,26 @@ function renderExercise(main, id) {
   $('#log-form').onsubmit = e => {
     e.preventDefault();
     const sets = $$('#sets input').map(i => parseInt(i.value, 10)).filter(v => Number.isFinite(v) && v >= 0);
-    if (!sets.length) return toast('Saisis au moins une série');
+    if (!sets.length) return toast('Saisis ton résultat');
     const f = e.target;
     const before = levelStatus(ex);
-    state.sessions.push({ id: uid(), date: f.date.value || today(), exId: ex.id, level: ex.current, sets, note: f.note.value.trim() });
+    const sess = { id: uid(), date: f.date.value || today(), exId: ex.id, level: selI, sets, note: f.note.value.trim() };
+    if (sel.cond) sess.formOk = !!(f.formOk && f.formOk.checked);
+    state.sessions.push(sess);
     save();
     const after = levelStatus(ex);
-    toast(after.green && !before.green ? 'Feu vert : tu peux tester le niveau suivant' : 'Séance enregistrée');
+    const numbersOk = sets.filter(v => v >= sel.target).length >= sel.sets;
+    toast(after.green && !before.green ? 'Feu vert : tu peux tester le niveau suivant'
+      : numbersOk && sel.cond && !sess.formOk ? 'Enregistré, non compté : forme non cochée'
+      : sessionValid(sess, sel) ? `Validé : ${sel.name}` : 'Séance enregistrée');
+    logChoice[ex.id] = undefined;
     render();
   };
+  const goNext = () => { ex.current = nextI; save(); toast('Nouveau niveau : ' + ex.levels[ex.current].name); render(); };
   const up = $('#level-up');
-  if (up) up.onclick = () => { ex.current++; save(); toast('Nouveau niveau : ' + ex.levels[ex.current].name); render(); };
+  if (up) up.onclick = goNext;
+  const skip = $('#skip-level');
+  if (skip) skip.onclick = () => confirmAction(`Sauter « ${base.name} » et passer à « ${next.name} » ?`, 'Sauter', goNext);
   $('#edit-levels').onclick = () => editLevels(ex);
   $$('[data-del]', main).forEach(b => b.onclick = () => confirmAction('Supprimer cette séance ?', 'Supprimer', () => {
     state.sessions = state.sessions.filter(s => s.id !== b.dataset.del);
@@ -339,15 +414,16 @@ function renderExercise(main, id) {
   }));
 }
 
-// Graphique : meilleure série de chaque séance au niveau actuel, avec la ligne d'objectif.
-function chartForLevel(ex) {
-  const l = ex.levels[ex.current];
-  const list = atLevel(ex);
-  if (!l || list.length < 2) {
-    return `<p class="empty">La courbe apparaîtra après deux séances à ce niveau. La ligne verte marquera l'objectif de ${l ? `${l.target} ${unitLabel(ex.unit)}` : 'ce niveau'}.</p>`;
+// Graphique : meilleur résultat de chaque séance à un niveau, avec la ligne d'objectif.
+function chartForLevel(ex, i) {
+  const l = ex.levels[i];
+  const u = unitLabel(lvUnit(ex, l));
+  const list = atLevel(ex, i);
+  if (list.length < 2) {
+    return `<p class="empty">La courbe apparaîtra après deux séances. La ligne verte marquera l'objectif : ${l.target} ${u}</p>`;
   }
   return lineChart(list.map(s => ({ x: s.date, y: Math.max(...s.sets) })), {
-    target: l.target, unit: unitLabel(ex.unit), label: `Meilleure série par séance, objectif ${l.target} ${unitLabel(ex.unit)}`,
+    target: l.target, unit: u, label: `Meilleur résultat par séance, objectif ${l.target} ${u}`,
   });
 }
 
@@ -360,7 +436,8 @@ function lineChart(points, { target = null, unit = '', label = '' } = {}) {
   const W = 320, H = 168, P = { l: 32, r: 12, t: 12, b: 24 };
   const ys = points.map(p => p.y).concat(target != null ? [target] : []);
   let min = Math.min(...ys), max = Math.max(...ys);
-  const step = niceStep(max - min || Math.max(1, max * 0.2));
+  let step = niceStep(max - min || Math.max(1, max * 0.2));
+  if (ys.every(Number.isInteger)) step = Math.max(1, step);
   min = Math.floor(min / step) * step; max = Math.ceil(max / step) * step;
   if (min === max) max = min + step;
   const x = i => P.l + (points.length === 1 ? 0 : (i * (W - P.l - P.r)) / (points.length - 1));
@@ -402,33 +479,37 @@ function editLevels(ex) {
   const draft = { name: ex.name, unit: ex.unit, current: ex.current, levels: ex.levels.map((l, i) => ({ ...l, _src: i })) };
   let pendingDelete = null;
   const draw = () => {
-    const u = draft.unit === 'sec' ? 'Secondes' : 'Rép.';
+    const tmp = { levels: draft.levels };
     openModal(`
       <h2>Modifier ${esc(ex.name)}</h2>
-      <div class="grid2">
-        <label class="field"><span>Nom de l'exercice</span><input id="ed-name" value="${esc(draft.name)}"></label>
-        <label class="field"><span>Mesuré en</span><select id="ed-unit">
-          <option value="reps" ${draft.unit === 'reps' ? 'selected' : ''}>Répétitions</option>
-          <option value="sec" ${draft.unit === 'sec' ? 'selected' : ''}>Secondes</option></select></label>
-      </div>
-      <p class="small secondary">Pour chaque niveau : le nombre de séries, ${draft.unit === 'sec' ? 'les secondes' : 'les répétitions'} par série,
-      et le nombre de séances d'affilée à réussir pour obtenir le feu vert.</p>
-      ${draft.levels.map((l, i) => `
+      <label class="field"><span>Nom de l'exercice</span><input id="ed-name" value="${esc(draft.name)}"></label>
+      <p class="small secondary">Pour chaque niveau : l'objectif à réussir (en répétitions ou en secondes) et, si le livre en donne une, la condition de forme.
+      Un niveau « bis » se valide en plus du niveau qui le précède.</p>
+      ${draft.levels.map((l, i) => {
+        const u = (l.unit || draft.unit) === 'sec' ? 'Secondes' : 'Répétitions';
+        return `
         <div class="level-edit" data-i="${i}">
-          <div class="head"><strong>Niveau ${i + 1}${i === draft.current ? ' · actuel' : ''}</strong>
+          <div class="head"><strong>Niveau ${levelLabel(tmp, i)}${i === draft.current ? ' · actuel' : ''}</strong>
             <button class="icon-btn" data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="Monter">${icon('up')}</button>
             <button class="icon-btn" data-act="down" ${i === draft.levels.length - 1 ? 'disabled' : ''} aria-label="Descendre">${icon('down')}</button>
             <button class="icon-btn" data-act="del" ${draft.levels.length <= 1 ? 'disabled' : ''} aria-label="Supprimer">${icon('x')}</button>
           </div>
           ${pendingDelete === i ? `<div class="actions"><button class="btn sm" data-act="keep">Garder</button><button class="btn sm primary" data-act="confirm-del">Supprimer ce niveau</button></div>` : ''}
           <label class="field"><span>Nom</span><input data-k="name" id="ed-${i}-name" value="${esc(l.name)}"></label>
-          <div class="grid3">
-            <label class="field"><span>Séries</span><input data-k="sets" id="ed-${i}-sets" type="number" inputmode="numeric" min="1" value="${l.sets}"></label>
-            <label class="field"><span>${u} par série</span><input data-k="target" id="ed-${i}-target" type="number" inputmode="numeric" min="1" value="${l.target}"></label>
-            <label class="field"><span>Séances</span><input data-k="times" id="ed-${i}-times" type="number" inputmode="numeric" min="1" value="${l.times}"></label>
+          <div class="grid2">
+            <label class="field"><span>Objectif</span><input data-k="target" id="ed-${i}-target" type="number" inputmode="numeric" min="1" value="${l.target}"></label>
+            <label class="field"><span>Mesuré en</span><select data-k="unit" id="ed-${i}-unit">
+              <option value="reps" ${u === 'Répétitions' ? 'selected' : ''}>Répétitions</option>
+              <option value="sec" ${u === 'Secondes' ? 'selected' : ''}>Secondes</option></select></label>
+            <label class="field"><span>Nombre de séries</span><input data-k="sets" id="ed-${i}-sets" type="number" inputmode="numeric" min="1" value="${l.sets}"></label>
+            <label class="field"><span>Séances réussies</span><input data-k="times" id="ed-${i}-times" type="number" inputmode="numeric" min="1" value="${l.times}"></label>
           </div>
-          ${i !== draft.current ? `<div><button class="btn sm" data-act="cur">En faire mon niveau actuel</button></div>` : ''}
-        </div>`).join('')}
+          <label class="field"><span>Condition de forme (facultatif)</span><input data-k="cond" id="ed-${i}-cond" value="${esc(l.cond || '')}" placeholder="Ex. : amplitude complète"></label>
+          <label class="check"><input type="checkbox" data-k="optional" id="ed-${i}-optional" ${l.optional ? 'checked' : ''}><span>Niveau optionnel, on peut le sauter</span></label>
+          ${i > 0 ? `<label class="check"><input type="checkbox" data-k="bis" id="ed-${i}-bis" ${l.bis ? 'checked' : ''}><span>Niveau « bis », à valider en plus du précédent</span></label>` : ''}
+          ${i !== draft.current && !l.bis ? `<div><button class="btn sm" data-act="cur">En faire mon niveau actuel</button></div>` : ''}
+        </div>`;
+      }).join('')}
       <button class="btn block" id="ed-add">${icon('plus')} Ajouter un niveau</button>
       <div class="actions">
         <button class="btn" id="ed-cancel">Annuler</button>
@@ -441,11 +522,15 @@ function editLevels(ex) {
         const l = draft.levels[+card.dataset.i];
         $$('[data-k]', card).forEach(inp => {
           const k = inp.dataset.k;
-          l[k] = k === 'name' ? inp.value : Math.max(1, parseInt(inp.value, 10) || 1);
+          if (k === 'name') l.name = inp.value;
+          else if (k === 'cond') { const c = inp.value.trim(); if (c) l.cond = c; else delete l.cond; }
+          else if (k === 'optional' || k === 'bis') { if (inp.checked) l[k] = true; else delete l[k]; }
+          else if (k === 'unit') { if (inp.value === draft.unit) delete l.unit; else l.unit = inp.value; }
+          else l[k] = Math.max(1, parseInt(inp.value, 10) || 1);
         });
       });
     };
-    $('#ed-unit').onchange = e => { sync(); draft.unit = e.target.value; draw(); };
+    $$('[data-k="bis"]', body).forEach(c => c.onchange = () => { sync(); draw(); });
     $$('[data-act]', body).forEach(b => b.onclick = () => {
       sync();
       const i = +b.closest('[data-i]').dataset.i;
@@ -470,19 +555,22 @@ function editLevels(ex) {
     $('#ed-add').onclick = () => {
       sync();
       const last = draft.levels[draft.levels.length - 1];
-      draft.levels.push(lvl('Nouveau niveau', last ? last.sets : 3, last ? last.target : 8, last ? last.times : 2));
+      draft.levels.push(lvl('Nouveau niveau', last ? last.target : 10, last && last.unit ? { unit: last.unit } : {}));
       draw();
     };
     $('#ed-cancel').onclick = closeModal;
     $('#ed-save').onclick = () => {
       sync();
       draft.levels.forEach(l => { l.name = l.name.trim() || 'Niveau sans nom'; });
+      if (draft.levels[0]) delete draft.levels[0].bis;
+      // Le niveau actuel pointe toujours sur le début de son étape.
+      while (draft.current > 0 && draft.levels[draft.current] && draft.levels[draft.current].bis) draft.current--;
       // Les séances gardent l'index de leur niveau : on le remappe si l'ordre a changé
       // (-1 si le niveau a été supprimé : la séance reste dans l'historique).
       const map = {};
       draft.levels.forEach((l, i) => { if (l._src != null) map[l._src] = i; delete l._src; });
       state.sessions.forEach(s => { if (s.exId === ex.id) s.level = s.level in map ? map[s.level] : -1; });
-      Object.assign(ex, { name: draft.name, unit: draft.unit, current: draft.current, levels: draft.levels });
+      Object.assign(ex, { name: draft.name, current: draft.current, levels: draft.levels });
       save(); closeModal(); toast('Niveaux enregistrés'); render();
     };
   };
@@ -513,7 +601,7 @@ function buildPlan() {
 function grooveReps(ex) {
   const l = ex.levels[ex.current];
   if (!l) return '';
-  return `${Math.max(1, Math.round(l.target * 0.6))} ${unitLabel(ex.unit)}`;
+  return `${Math.max(1, Math.round(l.target * 0.6))} ${unitLabel(lvUnit(ex, l))}`;
 }
 function renderPlan(main) {
   setTitle('Plan de la semaine');
