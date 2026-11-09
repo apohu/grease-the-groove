@@ -2,12 +2,13 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 /* Grease the Groove
  * Direction : carnet de progression du parc de street workout.
  * Acier des barres (gris légèrement froid), une seule couleur forte : le vert du feu vert.
- * Plex Sans pour l'interface, Plex Mono pour les chiffres, comme dans un carnet.
+ * Plex Sans pour l'interface, Barlow Semi Condensed pour les chiffres, comme un tableau d'affichage de sport.
+ * Une couleur par univers : vert (renfo, feu vert), orange (marche), rose (cardio), bleu-vert (altitude).
  */
 
 :root {
@@ -24,10 +25,17 @@
   --wait: #c2410c;        /* feu orange */
   --stop: #c62828;        /* feu rouge */
   --lamp-off: rgba(20, 24, 30, 0.12);
+  --walk: #e8590c;
+  --walk-ink: #ffffff;
+  --walk-soft: rgba(232, 89, 12, 0.1);
+  --hr: #e11d48;
+  --hr-soft: rgba(225, 29, 72, 0.09);
+  --alt: #0e7c86;
+  --alt-soft: rgba(14, 124, 134, 0.1);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 
   --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --mono: "Barlow Semi Condensed", "Plex Sans", -apple-system, "Segoe UI", sans-serif;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: light;
 }
@@ -46,6 +54,13 @@
     --wait: #f0a35e;
     --stop: #e5484d;
     --lamp-off: rgba(236, 238, 240, 0.1);
+    --walk: #ff8a3d;
+    --walk-ink: #1d0e03;
+    --walk-soft: rgba(255, 138, 61, 0.14);
+    --hr: #fb7185;
+    --hr-soft: rgba(251, 113, 133, 0.13);
+    --alt: #3cc6cf;
+    --alt-soft: rgba(60, 198, 207, 0.13);
     --shadow: none;
     color-scheme: dark;
   }
@@ -64,6 +79,13 @@
   --wait: #f0a35e;
   --stop: #e5484d;
   --lamp-off: rgba(236, 238, 240, 0.1);
+  --walk: #ff8a3d;
+  --walk-ink: #1d0e03;
+  --walk-soft: rgba(255, 138, 61, 0.14);
+  --hr: #fb7185;
+  --hr-soft: rgba(251, 113, 133, 0.13);
+  --alt: #3cc6cf;
+  --alt-soft: rgba(60, 198, 207, 0.13);
   --shadow: none;
   color-scheme: dark;
 }
@@ -78,7 +100,7 @@ body {
   -webkit-text-size-adjust: 100%;
   padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }
-.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 500; letter-spacing: 0.01em; }
 .icon { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- Barre du haut ---------- */
@@ -114,7 +136,7 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 24px max(16px, env(sa
 
 /* ---------- Sections et panneaux ---------- */
 section { display: grid; gap: 8px; min-width: 0; }
-.section-title { font-size: 13px; line-height: 20px; font-weight: 500; color: var(--text-2); margin: 0; padding: 0 4px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.section-title { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--text); margin: 0; padding: 0 4px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .panel {
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
   padding: 16px; min-width: 0;
@@ -206,7 +228,7 @@ input, select, textarea {
   transition: border-color 150ms var(--ease);
 }
 input:focus, select:focus { outline: none; border-color: var(--go); }
-input[type="number"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+input[type="number"] { font-variant-numeric: tabular-nums; }
 input::placeholder { color: var(--muted); }
 .form { display: grid; gap: 16px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -220,7 +242,7 @@ table.hist { width: 100%; border-collapse: collapse; font-size: 14px; }
 table.hist td, table.hist th { padding: 8px 8px 8px 0; border-top: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; }
 table.hist tr:first-child td, table.hist thead + tbody tr:first-child td { border-top: 1px solid var(--line); }
 table.hist th { color: var(--muted); font-weight: 400; font-size: 13px; border-top: 0; }
-table.hist td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+table.hist td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 15px; }
 table.hist td:last-child, table.hist th:last-child { padding-right: 0; text-align: right; }
 .ok { color: var(--go); }
 
@@ -249,7 +271,7 @@ svg.chart .area { fill: var(--text); opacity: 0.05; }
 svg.chart .line { fill: none; stroke: var(--text-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 svg.chart .dot { fill: var(--surface); stroke: var(--text-2); stroke-width: 1.5; }
 svg.chart .dot.last { fill: var(--text); stroke: var(--text); }
-svg.chart text { fill: var(--muted); font: 400 11px var(--mono); }
+svg.chart text { fill: var(--muted); font: 500 11px var(--mono); }
 
 /* ---------- Modale et toast ---------- */
 dialog {
@@ -319,6 +341,56 @@ svg.route .end { fill: var(--text); }
 .sbar span { display: block; height: 100%; background: var(--text-2); }
 .sbar span.ok { background: var(--go); }
 details summary { cursor: pointer; }
+
+/* Refonte : héros colorés, tuiles de chiffres, couleurs par univers */
+.hero { border-radius: 20px; padding: 20px; display: grid; gap: 16px; color: var(--walk-ink); }
+.hero.walk { background: linear-gradient(135deg, var(--walk), color-mix(in srgb, var(--walk) 72%, #b0123b)); }
+.hero-meta { font-size: 13px; line-height: 18px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.85; }
+.hero-sub { font-size: 15px; line-height: 22px; opacity: 0.9; }
+.hero-top, .hero-main { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.hero .big { font-family: var(--mono); font-weight: 600; font-size: 56px; line-height: 56px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.hero-big small, .hero-count small { font-size: 18px; font-weight: 500; margin-left: 4px; opacity: 0.85; }
+.hero-count { text-align: right; }
+.progress-block { display: grid; gap: 8px; }
+.t-num { font-family: var(--mono); font-weight: 600; font-size: 18px; }
+.t-num small { font-size: 13px; font-weight: 500; opacity: 0.85; }
+.bar.on-hero { background: rgba(255, 255, 255, 0.28); height: 8px; border-radius: 4px; }
+.bar.on-hero span { background: currentColor; border-radius: 4px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.tile { background: var(--surface); border-radius: 16px; padding: 12px 14px; display: grid; gap: 2px; align-content: start; min-width: 0; box-shadow: var(--shadow); border-top: 3px solid var(--lamp-off); }
+.t-label { font-size: 12px; line-height: 16px; color: var(--muted); font-weight: 500; }
+.t-val { font-family: var(--mono); font-weight: 600; font-size: 26px; line-height: 32px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.t-val small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+.t-foot { font-size: 12px; line-height: 16px; color: var(--text-2); }
+.tile.walk { border-top-color: var(--walk); } .tile.walk .t-val { color: var(--walk); }
+.tile.hr { border-top-color: var(--hr); } .tile.hr .t-val { color: var(--hr); }
+.tile.alt { border-top-color: var(--alt); } .tile.alt .t-val { color: var(--alt); }
+.tile.go { border-top-color: var(--go); } .tile.go .t-val { color: var(--go); }
+svg.route path { stroke: var(--walk); stroke-width: 1.6; }
+svg.route.mini { width: 52px; height: 52px; background: var(--walk-soft); border-radius: 12px; }
+svg.route.mini path { stroke: var(--walk); stroke-width: 3.5; }
+svg.route.on-hero { background: rgba(255, 255, 255, 0.16); width: 96px; height: 96px; }
+svg.route.on-hero path { stroke: currentColor; }
+.route-panel { background: linear-gradient(var(--surface), var(--walk-soft)); }
+.route-ph { width: 52px; height: 52px; border-radius: 12px; background: var(--walk-soft); color: var(--walk); }
+.walk-figs { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+.walk-figs b { font-family: var(--mono); font-weight: 600; font-size: 17px; color: var(--text); }
+.walk-figs .alt-t b { color: var(--alt); }
+svg.chart.alt .line { stroke: var(--alt); } svg.chart.alt .area { fill: var(--alt); opacity: 0.16; }
+svg.chart.hr .line { stroke: var(--hr); } svg.chart.hr .area { fill: var(--hr); opacity: 0.12; }
+.sbar span { background: var(--walk); }
+.sbar span.ok { background: var(--go); }
+.splits > div { grid-template-columns: 2ch 1fr 6ch; }
+.splits .num { font-size: 16px; }
+.count { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.count b { font-family: var(--mono); font-weight: 600; font-size: 20px; color: var(--text); }
+.count.ok, .count.ok b { color: var(--go); }
+.pbar { height: 6px; border-radius: 3px; background: var(--lamp-off); overflow: hidden; margin: 6px 0 4px; }
+.pbar span { display: block; height: 100%; background: var(--go); border-radius: 3px; transition: width 300ms var(--ease); }
+.groove .name { font-size: 16px; }
+.ex-row .name { font-size: 16px; }
+.level-head h2 { font-weight: 600; }
+.topbar h1 { font-weight: 600; font-size: 22px; }
 </style>
 <header class="topbar"><h1 id="view-title">Exercices</h1></header>
 <main id="view" aria-live="polite"></main>
@@ -337,7 +409,7 @@ details summary { cursor: pointer; }
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.6.2';
+const APP_VERSION = '0.7.0';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -1298,7 +1370,8 @@ function renderPlan(main) {
       return `<div class="groove" data-ex="${esc(e.id)}">
         <div class="grow">
           <div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(e.name)}</span>
-            <span class="num small ${left ? 'muted' : 'ok'}">${d.sets || 0}/${share}</span></div>
+            <span class="count ${left ? '' : 'ok'}"><b>${d.sets || 0}</b>/${share}</span></div>
+          <div class="pbar"><span style="width:${share ? Math.min(100, (d.sets || 0) / share * 100) : 0}%"></span></div>
           ${g.reps ? `<div class="small secondary"><button type="button" class="size-link" data-size="${esc(e.id)}" aria-label="Régler la taille des séries de ${esc(e.name)}">Séries de <span class="num">${g.reps} ${unitLabel(u)}${l.perSide ? ' par jambe' : ''}</span>${g.custom ? ' (réglée)' : ''}</button> · ${esc(l.name)}</div>`
             : `<div class="small secondary">Fais d'abord un test de ton max.</div>`}
           ${g.basis === 'prev' ? `<div class="small muted">Ton max en ${esc(e.levels[g.testI].name.toLowerCase())} est encore faible (${g.max}) : on consolide le niveau d'avant.</div>` : ''}
@@ -1496,6 +1569,7 @@ function fmtDur(sec) {
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   return h ? `${h}h${String(m).padStart(2, '0')}` : `${m} min ${String(s).padStart(2, '0')}`;
 }
+const fmtDurShort = sec => { sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60); return h ? `${h}h${String(m).padStart(2, '0')}` : `${m} min`; };
 const fmtPace = sec => `${Math.floor(sec / 60)}'${String(Math.round(sec % 60)).padStart(2, '0')}`;
 const fmtKm = m => fr((m / 1000).toFixed(2));
 function haversine(a, b) {
@@ -1562,6 +1636,9 @@ function parseGpx(text, fileName) {
     ...(hrKeep.length ? { hrs: hrKeep } : {}),
   };
 }
+// Tuile de chiffre : libellé, grande valeur, unité ; `tone` colore la tuile (walk, hr, alt, go).
+const tile = (label, value, unit = '', tone = '', extra = '') =>
+  `<div class="tile ${tone}"><span class="t-label">${label}</span><span class="t-val">${value}${unit ? `<small>${unit}</small>` : ''}</span>${extra}</div>`;
 const paceOf = w => (w.duration && w.distance ? w.duration / (w.distance / 1000) : null);
 // Dans la base, le tracé est rangé en tableaux plats ; en mémoire, en points [lat, lon, alt, distance].
 function walkBody(w) {
@@ -1597,20 +1674,23 @@ function renderWalks(main) {
 
   let html = '';
   if (days >= 0) {
-    html += `<section>
-      <h2 class="section-title"><span>${EVENT.name} · 6 décembre</span><span class="num">${days ? `J-${days}` : 'Aujourd\'hui'}</span></h2>
-      <div class="panel" style="display:grid;gap:16px">
-        <div class="stats">
-          <div><span class="small muted">Cette semaine</span><strong class="num">${fr((weekKm / 1000).toFixed(1))} km</strong></div>
-          <div><span class="small muted">Plus longue</span><strong class="num">${longest ? fr((longest.distance / 1000).toFixed(1)) : '0'} km</strong><span class="small muted">sur ${EVENT.km}</span></div>
-          <div><span class="small muted">Allure marche</span><strong class="num ${avgPace ? (okPace ? 'ok' : '') : ''}">${avgPace ? fmtPace(avgPace) : '–'}</strong><span class="small muted">visée ${fmtPace(TARGET_PACE)}</span></div>
-        </div>
-        <div class="bar" role="img" aria-label="Plus longue marche : ${longest ? fmtKm(longest.distance) : 0} km sur ${EVENT.km}"><span style="width:${Math.min(100, longest ? longest.distance / 10 / EVENT.km : 0)}%"></span></div>
-        <p class="small secondary">${projection
-          ? `À ton allure moyenne, les ${EVENT.km} km prendraient environ <span class="num">${fmtDur(projection)}</span>, ${projection < EVENT.record ? `soit <span class="num">${fmtDur(EVENT.record - projection)}</span> de marge sur ton record (2h46)` : 'au-dessus de ton record (2h46) : accélère un peu le pas'}. Ce qu'il reste à construire, c'est l'endurance pour tenir la distance.`
-          : `Pour battre ton record de 2h46, il faut marcher à ${fmtPace(TARGET_PACE)} au km ou mieux. Importe tes marches pour suivre ta préparation.`}</p>
-      </div>
-    </section>`;
+    const longKm = longest ? longest.distance / 1000 : 0;
+    html += `<section class="hero walk">
+      <div class="hero-top"><div><div class="hero-meta">${EVENT.name}</div>
+        <div class="hero-sub">Dimanche 6 décembre · ${EVENT.km} km · record 2h46</div></div>
+        <div class="hero-count"><span class="big">${days}</span><small>${days > 1 ? 'jours' : 'jour'}</small></div></div>
+      <div class="progress-block"><div class="row" style="justify-content:space-between"><span class="small">Plus longue marche</span>
+        <span class="t-num">${fr(longKm.toFixed(1))} <small>/ ${EVENT.km} km</small></span></div>
+        <div class="bar on-hero"><span style="width:${Math.min(100, longKm / EVENT.km * 100)}%"></span></div></div>
+    </section>
+    <div class="tiles">
+      ${tile('Cette semaine', fr((weekKm / 1000).toFixed(1)), 'km', 'walk')}
+      ${tile('Allure marche', avgPace ? fmtPace(avgPace) : '–', avgPace ? '/km' : '', okPace ? 'go' : '', `<span class="t-foot">visée ${fmtPace(TARGET_PACE)}</span>`)}
+      ${tile('Sur 14 km', projection ? fmtDurShort(projection) : '–', '', projection && projection < EVENT.record ? 'go' : '', `<span class="t-foot">${projection ? (projection < EVENT.record ? `${fmtDurShort(EVENT.record - projection)} de marge` : 'au-dessus du record') : 'à ton allure'}</span>`)}
+    </div>
+    <p class="small secondary" style="padding:0 4px">${projection
+      ? 'Ton allure est la bonne : ce qu\'il reste à construire, c\'est l\'endurance pour tenir les 14 km. Allonge un peu chaque semaine.'
+      : `Pour battre ton record, marche à ${fmtPace(TARGET_PACE)} au km ou mieux. Importe tes marches pour suivre ta préparation.`}</p>`;
   }
 
   html += `<section>
@@ -1633,9 +1713,9 @@ function renderWalks(main) {
   html += `<section>
     <h2 class="section-title"><span>Mes marches</span><span class="num">${walks.length || ''}</span></h2>
     <div class="panel list">${walks.length ? walks.map(w => `<a class="ex-row" href="#" data-walk="${esc(w.id)}">
-        ${w.points && w.points.length > 1 ? routeSvg(w, 44) : `<span class="route-ph">${icon('footprints')}</span>`}
-        <div class="grow"><div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(w.name || 'Marche')}</span><span class="num small muted">${fmtDate(w.date)}</span></div>
-          <div class="small secondary num">${fmtKm(w.distance)} km${w.duration ? ` · ${fmtDur(w.duration)} · ${fmtPace(paceOf(w))}/km` : ''}${w.gain ? ` · +${w.gain} m` : ''}</div>
+        ${w.points && w.points.length > 1 ? routeSvg(w, 52) : `<span class="route-ph">${icon('footprints')}</span>`}
+        <div class="grow"><div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(w.name || 'Marche')}</span><span class="small muted">${fmtDate(w.date)}</span></div>
+          <div class="walk-figs"><span><b>${fmtKm(w.distance)}</b> km</span>${w.duration ? `<span><b>${fmtDur(w.duration)}</b></span><span><b>${fmtPace(paceOf(w))}</b> /km</span>` : ''}${w.gain ? `<span class="alt-t"><b>+${w.gain}</b> m</span>` : ''}</div>
           <div class="small muted">${w.kind === 'mixte' ? 'Marche et footing' : 'Marche pure'}${w.note ? ` · ${esc(w.note)}` : ''}</div></div>
         ${icon('chevronRight', 'chev')}</a>`).join('') : `<p class="empty" style="padding:16px 0">Aucune marche pour l'instant.</p>`}</div>
   </section>`;
@@ -1667,7 +1747,7 @@ function renderWalks(main) {
 }
 
 // Tracé sans fond de carte (l'artefact ne peut pas charger de tuiles), projeté à plat.
-function routeSvg(w, size = null) {
+function routeSvg(w, size = null, onHero = false) {
   const P = w.points;
   const lat0 = P.reduce((t, p) => t + p[0], 0) / P.length;
   const k = Math.cos(lat0 * Math.PI / 180);
@@ -1679,20 +1759,20 @@ function routeSvg(w, size = null) {
   const d = P.map((p, i) => `${i ? 'L' : 'M'}${(ox + (xs[i] - minX) * s).toFixed(1)},${(oy + (ys[i] - minY) * s).toFixed(1)}`).join(' ');
   const end = d.split(' ').pop().slice(1).split(',');
   const start = d.split(' ')[0].slice(1).split(',');
-  return `<svg class="route${size ? ' mini' : ''}" viewBox="0 0 ${W} ${W}" ${size ? `width="${size}" height="${size}"` : ''} role="img" aria-label="Tracé de la marche">
+  return `<svg class="route${size ? ' mini' : ''}${onHero ? ' on-hero' : ''}" viewBox="0 0 ${W} ${W}" ${size ? `width="${size}" height="${size}"` : ''} role="img" aria-label="Tracé de la marche">
     <path d="${d}"/>${size ? '' : `<circle class="start" cx="${start[0]}" cy="${start[1]}" r="2"/><circle class="end" cx="${end[0]}" cy="${end[1]}" r="2"/>`}</svg>`;
 }
 function elevationSvg(w) {
   const P = w.points.filter(p => p[2] != null);
   if (P.length < 2) return '';
-  return distChart(P.map(p => [p[3], p[2]]), 10, 'Profil d\'altitude', 'm');
+  return distChart(P.map(p => [p[3], p[2]]), 10, 'Profil d\'altitude', 'm', 'alt');
 }
 function hrSvg(w) {
   if (!w.hrs) return '';
   const P = w.points.map((p, i) => [p[3], w.hrs[i]]).filter(x => x[1] > 0);
-  return P.length > 1 ? distChart(P, 10, 'Fréquence cardiaque', 'bpm') : '';
+  return P.length > 1 ? distChart(P, 10, 'Fréquence cardiaque', 'bpm', 'hr') : '';
 }
-function distChart(P, minSpan, what, unit) {
+function distChart(P, minSpan, what, unit, tone = '') {
   const W = 320, H = 120, L = 36, R = 8, T = 10, B = 22;
   const maxD = P[P.length - 1][0] || 1;
   let min = Math.min(...P.map(p => p[1])), max = Math.max(...P.map(p => p[1]));
@@ -1702,7 +1782,7 @@ function distChart(P, minSpan, what, unit) {
   const x = d => L + d / maxD * (W - L - R), y = v => T + (1 - (v - min) / (max - min)) * (H - T - B);
   const line = P.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ');
   const ticks = []; for (let v = min; v <= max + 1e-9; v += st) ticks.push(v);
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${what}, de ${Math.round(lo)} à ${Math.round(hi)} ${unit}">
+  return `<svg class="chart ${tone}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${what}, de ${Math.round(lo)} à ${Math.round(hi)} ${unit}">
     ${ticks.map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('')}
     <path class="area" d="${line} L${x(maxD)},${H - B} L${L},${H - B} Z"/><path class="line" d="${line}"/>
     <text x="${L}" y="${H - 6}">0 km</text><text x="${W - R}" y="${H - 6}" text-anchor="end">${fmtKm(maxD)} km</text></svg>`;
@@ -1730,16 +1810,24 @@ function renderWalk(main, id) {
   if (!w) { walkView = null; return renderWalks(main); }
   setTitle(w.name || 'Marche', () => { walkView = null; render(); });
   const pace = paceOf(w);
+  const hasEle = w.points && w.points.some(p => p[2] != null);
+  const pauses = w.moving && w.duration - w.moving >= 30 ? w.duration - w.moving : 0;
   main.innerHTML = `
-    <div class="level-head"><div class="small muted num">${fmtLong(w.date)} · ${w.source === 'gpx' ? 'fichier GPX' : 'saisie rapide'}</div>
-      <h2 class="num">${fmtKm(w.distance)} km${w.duration ? ` en ${fmtDur(w.duration)}` : ''}</h2></div>
-    <div class="panel stats">
-      <div><span class="small muted">Allure</span><strong class="num ${pace && pace <= TARGET_PACE ? 'ok' : ''}">${pace ? fmtPace(pace) + '/km' : '–'}</strong></div>
-      <div><span class="small muted">Vitesse</span><strong class="num">${pace ? fr((3600 / pace).toFixed(1)) + ' km/h' : '–'}</strong></div>
-      <div><span class="small muted">Dénivelé</span><strong class="num">${w.points && w.points.some(p => p[2] != null) ? `+${w.gain} m` : '–'}</strong></div>
+    <section class="hero walk">
+      <div class="hero-meta">${fmtLong(w.date)} · ${w.kind === 'mixte' ? 'marche et footing' : 'marche pure'}</div>
+      <div class="hero-main"><div><div class="hero-big"><span class="big">${fmtKm(w.distance)}</span><small>km</small></div>
+        <div class="hero-sub">${w.duration ? `${fmtDur(w.duration)}${pace ? ` · ${fmtPace(pace)} /km` : ''}` : 'saisie rapide'}</div></div>
+        ${w.points && w.points.length > 1 ? routeSvg(w, 96, true) : ''}</div>
+    </section>
+    <div class="tiles">
+      ${tile('Allure', pace ? fmtPace(pace) : '–', pace ? '/km' : '', pace && pace <= TARGET_PACE ? 'go' : '')}
+      ${tile('Vitesse', pace ? fr((3600 / pace).toFixed(1)) : '–', pace ? 'km/h' : '')}
+      ${w.moving ? tile('En mouvement', fmtDurShort(w.moving), '', '', pauses ? `<span class="t-foot">${fmtDurShort(pauses)} de pause</span>` : '') : ''}
+      ${hasEle ? tile('Dénivelé', `+${w.gain}`, 'm', 'alt', `<span class="t-foot">${w.eleMin} à ${w.eleMax} m</span>`) : ''}
+      ${w.hrAvg ? tile('Cardio moyen', w.hrAvg, 'bpm', 'hr', `<span class="t-foot">max ${w.hrMax}</span>`) : ''}
+      ${w.splits && w.splits.length > 1 ? tile('Meilleur km', fmtPace(Math.min(...w.splits)), '/km', 'walk', `<span class="t-foot">km ${w.splits.indexOf(Math.min(...w.splits)) + 1}</span>`) : ''}
     </div>
-    ${walkDetails(w)}
-    ${w.points && w.points.length > 1 ? `<section><h2 class="section-title">Tracé</h2><div class="panel">${routeSvg(w)}</div></section>` : ''}
+    ${w.points && w.points.length > 1 ? `<section><h2 class="section-title">Tracé</h2><div class="panel route-panel">${routeSvg(w)}</div></section>` : ''}
     ${elevationSvg(w) ? `<section><h2 class="section-title"><span>Altitude</span><span class="num">+${w.gain} m · −${w.loss} m</span></h2><div class="panel">${elevationSvg(w)}</div></section>` : ''}
     ${hrSvg(w) ? `<section><h2 class="section-title"><span>Fréquence cardiaque</span><span class="num">moy. ${w.hrAvg} · max ${w.hrMax} bpm</span></h2><div class="panel">${hrSvg(w)}</div></section>` : ''}
     ${w.splits && w.splits.length ? `<section><h2 class="section-title"><span>Temps au kilomètre</span><span class="num">visée ${fmtPace(TARGET_PACE)}</span></h2>

@@ -1,11 +1,10 @@
 /* Grease the Groove
  * Direction : carnet de progression du parc de street workout.
  * Acier des barres (gris légèrement froid), une seule couleur forte : le vert du feu vert.
- * Plex Sans pour l'interface, Plex Mono pour les chiffres, comme dans un carnet.
+ * Plex Sans pour l'interface, Barlow Semi Condensed pour les chiffres, comme un tableau d'affichage de sport.
+ * Une couleur par univers : vert (renfo, feu vert), orange (marche), rose (cardio), bleu-vert (altitude).
  */
 @font-face { font-family: "Plex Sans"; src: url("fonts/plex-sans.woff2") format("woff2"); font-weight: 100 700; font-display: swap; }
-@font-face { font-family: "Plex Mono"; src: url("fonts/plex-mono-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Plex Mono"; src: url("fonts/plex-mono-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
 
 :root {
   --bg: #f3f4f6;
@@ -21,10 +20,17 @@
   --wait: #c2410c;        /* feu orange */
   --stop: #c62828;        /* feu rouge */
   --lamp-off: rgba(20, 24, 30, 0.12);
+  --walk: #e8590c;
+  --walk-ink: #ffffff;
+  --walk-soft: rgba(232, 89, 12, 0.1);
+  --hr: #e11d48;
+  --hr-soft: rgba(225, 29, 72, 0.09);
+  --alt: #0e7c86;
+  --alt-soft: rgba(14, 124, 134, 0.1);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 
   --sans: "Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --mono: "Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --mono: "Barlow Semi Condensed", "Plex Sans", -apple-system, "Segoe UI", sans-serif;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: light;
 }
@@ -43,6 +49,13 @@
     --wait: #f0a35e;
     --stop: #e5484d;
     --lamp-off: rgba(236, 238, 240, 0.1);
+    --walk: #ff8a3d;
+    --walk-ink: #1d0e03;
+    --walk-soft: rgba(255, 138, 61, 0.14);
+    --hr: #fb7185;
+    --hr-soft: rgba(251, 113, 133, 0.13);
+    --alt: #3cc6cf;
+    --alt-soft: rgba(60, 198, 207, 0.13);
     --shadow: none;
     color-scheme: dark;
   }
@@ -61,6 +74,13 @@
   --wait: #f0a35e;
   --stop: #e5484d;
   --lamp-off: rgba(236, 238, 240, 0.1);
+  --walk: #ff8a3d;
+  --walk-ink: #1d0e03;
+  --walk-soft: rgba(255, 138, 61, 0.14);
+  --hr: #fb7185;
+  --hr-soft: rgba(251, 113, 133, 0.13);
+  --alt: #3cc6cf;
+  --alt-soft: rgba(60, 198, 207, 0.13);
   --shadow: none;
   color-scheme: dark;
 }
@@ -75,7 +95,7 @@ body {
   -webkit-text-size-adjust: 100%;
   padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }
-.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 500; letter-spacing: 0.01em; }
 .icon { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- Barre du haut ---------- */
@@ -111,7 +131,7 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 24px max(16px, env(sa
 
 /* ---------- Sections et panneaux ---------- */
 section { display: grid; gap: 8px; min-width: 0; }
-.section-title { font-size: 13px; line-height: 20px; font-weight: 500; color: var(--text-2); margin: 0; padding: 0 4px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.section-title { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--text); margin: 0; padding: 0 4px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .panel {
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
   padding: 16px; min-width: 0;
@@ -203,7 +223,7 @@ input, select, textarea {
   transition: border-color 150ms var(--ease);
 }
 input:focus, select:focus { outline: none; border-color: var(--go); }
-input[type="number"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+input[type="number"] { font-variant-numeric: tabular-nums; }
 input::placeholder { color: var(--muted); }
 .form { display: grid; gap: 16px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -217,7 +237,7 @@ table.hist { width: 100%; border-collapse: collapse; font-size: 14px; }
 table.hist td, table.hist th { padding: 8px 8px 8px 0; border-top: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; }
 table.hist tr:first-child td, table.hist thead + tbody tr:first-child td { border-top: 1px solid var(--line); }
 table.hist th { color: var(--muted); font-weight: 400; font-size: 13px; border-top: 0; }
-table.hist td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+table.hist td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 15px; }
 table.hist td:last-child, table.hist th:last-child { padding-right: 0; text-align: right; }
 .ok { color: var(--go); }
 
@@ -246,7 +266,7 @@ svg.chart .area { fill: var(--text); opacity: 0.05; }
 svg.chart .line { fill: none; stroke: var(--text-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 svg.chart .dot { fill: var(--surface); stroke: var(--text-2); stroke-width: 1.5; }
 svg.chart .dot.last { fill: var(--text); stroke: var(--text); }
-svg.chart text { fill: var(--muted); font: 400 11px var(--mono); }
+svg.chart text { fill: var(--muted); font: 500 11px var(--mono); }
 
 /* ---------- Modale et toast ---------- */
 dialog {
@@ -316,3 +336,53 @@ svg.route .end { fill: var(--text); }
 .sbar span { display: block; height: 100%; background: var(--text-2); }
 .sbar span.ok { background: var(--go); }
 details summary { cursor: pointer; }
+
+/* Refonte : héros colorés, tuiles de chiffres, couleurs par univers */
+.hero { border-radius: 20px; padding: 20px; display: grid; gap: 16px; color: var(--walk-ink); }
+.hero.walk { background: linear-gradient(135deg, var(--walk), color-mix(in srgb, var(--walk) 72%, #b0123b)); }
+.hero-meta { font-size: 13px; line-height: 18px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.85; }
+.hero-sub { font-size: 15px; line-height: 22px; opacity: 0.9; }
+.hero-top, .hero-main { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.hero .big { font-family: var(--mono); font-weight: 600; font-size: 56px; line-height: 56px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.hero-big small, .hero-count small { font-size: 18px; font-weight: 500; margin-left: 4px; opacity: 0.85; }
+.hero-count { text-align: right; }
+.progress-block { display: grid; gap: 8px; }
+.t-num { font-family: var(--mono); font-weight: 600; font-size: 18px; }
+.t-num small { font-size: 13px; font-weight: 500; opacity: 0.85; }
+.bar.on-hero { background: rgba(255, 255, 255, 0.28); height: 8px; border-radius: 4px; }
+.bar.on-hero span { background: currentColor; border-radius: 4px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.tile { background: var(--surface); border-radius: 16px; padding: 12px 14px; display: grid; gap: 2px; align-content: start; min-width: 0; box-shadow: var(--shadow); border-top: 3px solid var(--lamp-off); }
+.t-label { font-size: 12px; line-height: 16px; color: var(--muted); font-weight: 500; }
+.t-val { font-family: var(--mono); font-weight: 600; font-size: 26px; line-height: 32px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.t-val small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+.t-foot { font-size: 12px; line-height: 16px; color: var(--text-2); }
+.tile.walk { border-top-color: var(--walk); } .tile.walk .t-val { color: var(--walk); }
+.tile.hr { border-top-color: var(--hr); } .tile.hr .t-val { color: var(--hr); }
+.tile.alt { border-top-color: var(--alt); } .tile.alt .t-val { color: var(--alt); }
+.tile.go { border-top-color: var(--go); } .tile.go .t-val { color: var(--go); }
+svg.route path { stroke: var(--walk); stroke-width: 1.6; }
+svg.route.mini { width: 52px; height: 52px; background: var(--walk-soft); border-radius: 12px; }
+svg.route.mini path { stroke: var(--walk); stroke-width: 3.5; }
+svg.route.on-hero { background: rgba(255, 255, 255, 0.16); width: 96px; height: 96px; }
+svg.route.on-hero path { stroke: currentColor; }
+.route-panel { background: linear-gradient(var(--surface), var(--walk-soft)); }
+.route-ph { width: 52px; height: 52px; border-radius: 12px; background: var(--walk-soft); color: var(--walk); }
+.walk-figs { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+.walk-figs b { font-family: var(--mono); font-weight: 600; font-size: 17px; color: var(--text); }
+.walk-figs .alt-t b { color: var(--alt); }
+svg.chart.alt .line { stroke: var(--alt); } svg.chart.alt .area { fill: var(--alt); opacity: 0.16; }
+svg.chart.hr .line { stroke: var(--hr); } svg.chart.hr .area { fill: var(--hr); opacity: 0.12; }
+.sbar span { background: var(--walk); }
+.sbar span.ok { background: var(--go); }
+.splits > div { grid-template-columns: 2ch 1fr 6ch; }
+.splits .num { font-size: 16px; }
+.count { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.count b { font-family: var(--mono); font-weight: 600; font-size: 20px; color: var(--text); }
+.count.ok, .count.ok b { color: var(--go); }
+.pbar { height: 6px; border-radius: 3px; background: var(--lamp-off); overflow: hidden; margin: 6px 0 4px; }
+.pbar span { display: block; height: 100%; background: var(--go); border-radius: 3px; transition: width 300ms var(--ease); }
+.groove .name { font-size: 16px; }
+.ex-row .name { font-size: 16px; }
+.level-head h2 { font-weight: 600; }
+.topbar h1 { font-weight: 600; font-size: 22px; }

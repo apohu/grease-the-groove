@@ -4,7 +4,7 @@
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.6.2';
+const APP_VERSION = '0.7.0';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -965,7 +965,8 @@ function renderPlan(main) {
       return `<div class="groove" data-ex="${esc(e.id)}">
         <div class="grow">
           <div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(e.name)}</span>
-            <span class="num small ${left ? 'muted' : 'ok'}">${d.sets || 0}/${share}</span></div>
+            <span class="count ${left ? '' : 'ok'}"><b>${d.sets || 0}</b>/${share}</span></div>
+          <div class="pbar"><span style="width:${share ? Math.min(100, (d.sets || 0) / share * 100) : 0}%"></span></div>
           ${g.reps ? `<div class="small secondary"><button type="button" class="size-link" data-size="${esc(e.id)}" aria-label="Régler la taille des séries de ${esc(e.name)}">Séries de <span class="num">${g.reps} ${unitLabel(u)}${l.perSide ? ' par jambe' : ''}</span>${g.custom ? ' (réglée)' : ''}</button> · ${esc(l.name)}</div>`
             : `<div class="small secondary">Fais d'abord un test de ton max.</div>`}
           ${g.basis === 'prev' ? `<div class="small muted">Ton max en ${esc(e.levels[g.testI].name.toLowerCase())} est encore faible (${g.max}) : on consolide le niveau d'avant.</div>` : ''}
@@ -1163,6 +1164,7 @@ function fmtDur(sec) {
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   return h ? `${h}h${String(m).padStart(2, '0')}` : `${m} min ${String(s).padStart(2, '0')}`;
 }
+const fmtDurShort = sec => { sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60); return h ? `${h}h${String(m).padStart(2, '0')}` : `${m} min`; };
 const fmtPace = sec => `${Math.floor(sec / 60)}'${String(Math.round(sec % 60)).padStart(2, '0')}`;
 const fmtKm = m => fr((m / 1000).toFixed(2));
 function haversine(a, b) {
@@ -1229,6 +1231,9 @@ function parseGpx(text, fileName) {
     ...(hrKeep.length ? { hrs: hrKeep } : {}),
   };
 }
+// Tuile de chiffre : libellé, grande valeur, unité ; `tone` colore la tuile (walk, hr, alt, go).
+const tile = (label, value, unit = '', tone = '', extra = '') =>
+  `<div class="tile ${tone}"><span class="t-label">${label}</span><span class="t-val">${value}${unit ? `<small>${unit}</small>` : ''}</span>${extra}</div>`;
 const paceOf = w => (w.duration && w.distance ? w.duration / (w.distance / 1000) : null);
 // Dans la base, le tracé est rangé en tableaux plats ; en mémoire, en points [lat, lon, alt, distance].
 function walkBody(w) {
@@ -1264,20 +1269,23 @@ function renderWalks(main) {
 
   let html = '';
   if (days >= 0) {
-    html += `<section>
-      <h2 class="section-title"><span>${EVENT.name} · 6 décembre</span><span class="num">${days ? `J-${days}` : 'Aujourd\'hui'}</span></h2>
-      <div class="panel" style="display:grid;gap:16px">
-        <div class="stats">
-          <div><span class="small muted">Cette semaine</span><strong class="num">${fr((weekKm / 1000).toFixed(1))} km</strong></div>
-          <div><span class="small muted">Plus longue</span><strong class="num">${longest ? fr((longest.distance / 1000).toFixed(1)) : '0'} km</strong><span class="small muted">sur ${EVENT.km}</span></div>
-          <div><span class="small muted">Allure marche</span><strong class="num ${avgPace ? (okPace ? 'ok' : '') : ''}">${avgPace ? fmtPace(avgPace) : '–'}</strong><span class="small muted">visée ${fmtPace(TARGET_PACE)}</span></div>
-        </div>
-        <div class="bar" role="img" aria-label="Plus longue marche : ${longest ? fmtKm(longest.distance) : 0} km sur ${EVENT.km}"><span style="width:${Math.min(100, longest ? longest.distance / 10 / EVENT.km : 0)}%"></span></div>
-        <p class="small secondary">${projection
-          ? `À ton allure moyenne, les ${EVENT.km} km prendraient environ <span class="num">${fmtDur(projection)}</span>, ${projection < EVENT.record ? `soit <span class="num">${fmtDur(EVENT.record - projection)}</span> de marge sur ton record (2h46)` : 'au-dessus de ton record (2h46) : accélère un peu le pas'}. Ce qu'il reste à construire, c'est l'endurance pour tenir la distance.`
-          : `Pour battre ton record de 2h46, il faut marcher à ${fmtPace(TARGET_PACE)} au km ou mieux. Importe tes marches pour suivre ta préparation.`}</p>
-      </div>
-    </section>`;
+    const longKm = longest ? longest.distance / 1000 : 0;
+    html += `<section class="hero walk">
+      <div class="hero-top"><div><div class="hero-meta">${EVENT.name}</div>
+        <div class="hero-sub">Dimanche 6 décembre · ${EVENT.km} km · record 2h46</div></div>
+        <div class="hero-count"><span class="big">${days}</span><small>${days > 1 ? 'jours' : 'jour'}</small></div></div>
+      <div class="progress-block"><div class="row" style="justify-content:space-between"><span class="small">Plus longue marche</span>
+        <span class="t-num">${fr(longKm.toFixed(1))} <small>/ ${EVENT.km} km</small></span></div>
+        <div class="bar on-hero"><span style="width:${Math.min(100, longKm / EVENT.km * 100)}%"></span></div></div>
+    </section>
+    <div class="tiles">
+      ${tile('Cette semaine', fr((weekKm / 1000).toFixed(1)), 'km', 'walk')}
+      ${tile('Allure marche', avgPace ? fmtPace(avgPace) : '–', avgPace ? '/km' : '', okPace ? 'go' : '', `<span class="t-foot">visée ${fmtPace(TARGET_PACE)}</span>`)}
+      ${tile('Sur 14 km', projection ? fmtDurShort(projection) : '–', '', projection && projection < EVENT.record ? 'go' : '', `<span class="t-foot">${projection ? (projection < EVENT.record ? `${fmtDurShort(EVENT.record - projection)} de marge` : 'au-dessus du record') : 'à ton allure'}</span>`)}
+    </div>
+    <p class="small secondary" style="padding:0 4px">${projection
+      ? 'Ton allure est la bonne : ce qu\'il reste à construire, c\'est l\'endurance pour tenir les 14 km. Allonge un peu chaque semaine.'
+      : `Pour battre ton record, marche à ${fmtPace(TARGET_PACE)} au km ou mieux. Importe tes marches pour suivre ta préparation.`}</p>`;
   }
 
   html += `<section>
@@ -1300,9 +1308,9 @@ function renderWalks(main) {
   html += `<section>
     <h2 class="section-title"><span>Mes marches</span><span class="num">${walks.length || ''}</span></h2>
     <div class="panel list">${walks.length ? walks.map(w => `<a class="ex-row" href="#" data-walk="${esc(w.id)}">
-        ${w.points && w.points.length > 1 ? routeSvg(w, 44) : `<span class="route-ph">${icon('footprints')}</span>`}
-        <div class="grow"><div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(w.name || 'Marche')}</span><span class="num small muted">${fmtDate(w.date)}</span></div>
-          <div class="small secondary num">${fmtKm(w.distance)} km${w.duration ? ` · ${fmtDur(w.duration)} · ${fmtPace(paceOf(w))}/km` : ''}${w.gain ? ` · +${w.gain} m` : ''}</div>
+        ${w.points && w.points.length > 1 ? routeSvg(w, 52) : `<span class="route-ph">${icon('footprints')}</span>`}
+        <div class="grow"><div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(w.name || 'Marche')}</span><span class="small muted">${fmtDate(w.date)}</span></div>
+          <div class="walk-figs"><span><b>${fmtKm(w.distance)}</b> km</span>${w.duration ? `<span><b>${fmtDur(w.duration)}</b></span><span><b>${fmtPace(paceOf(w))}</b> /km</span>` : ''}${w.gain ? `<span class="alt-t"><b>+${w.gain}</b> m</span>` : ''}</div>
           <div class="small muted">${w.kind === 'mixte' ? 'Marche et footing' : 'Marche pure'}${w.note ? ` · ${esc(w.note)}` : ''}</div></div>
         ${icon('chevronRight', 'chev')}</a>`).join('') : `<p class="empty" style="padding:16px 0">Aucune marche pour l'instant.</p>`}</div>
   </section>`;
@@ -1334,7 +1342,7 @@ function renderWalks(main) {
 }
 
 // Tracé sans fond de carte (l'artefact ne peut pas charger de tuiles), projeté à plat.
-function routeSvg(w, size = null) {
+function routeSvg(w, size = null, onHero = false) {
   const P = w.points;
   const lat0 = P.reduce((t, p) => t + p[0], 0) / P.length;
   const k = Math.cos(lat0 * Math.PI / 180);
@@ -1346,20 +1354,20 @@ function routeSvg(w, size = null) {
   const d = P.map((p, i) => `${i ? 'L' : 'M'}${(ox + (xs[i] - minX) * s).toFixed(1)},${(oy + (ys[i] - minY) * s).toFixed(1)}`).join(' ');
   const end = d.split(' ').pop().slice(1).split(',');
   const start = d.split(' ')[0].slice(1).split(',');
-  return `<svg class="route${size ? ' mini' : ''}" viewBox="0 0 ${W} ${W}" ${size ? `width="${size}" height="${size}"` : ''} role="img" aria-label="Tracé de la marche">
+  return `<svg class="route${size ? ' mini' : ''}${onHero ? ' on-hero' : ''}" viewBox="0 0 ${W} ${W}" ${size ? `width="${size}" height="${size}"` : ''} role="img" aria-label="Tracé de la marche">
     <path d="${d}"/>${size ? '' : `<circle class="start" cx="${start[0]}" cy="${start[1]}" r="2"/><circle class="end" cx="${end[0]}" cy="${end[1]}" r="2"/>`}</svg>`;
 }
 function elevationSvg(w) {
   const P = w.points.filter(p => p[2] != null);
   if (P.length < 2) return '';
-  return distChart(P.map(p => [p[3], p[2]]), 10, 'Profil d\'altitude', 'm');
+  return distChart(P.map(p => [p[3], p[2]]), 10, 'Profil d\'altitude', 'm', 'alt');
 }
 function hrSvg(w) {
   if (!w.hrs) return '';
   const P = w.points.map((p, i) => [p[3], w.hrs[i]]).filter(x => x[1] > 0);
-  return P.length > 1 ? distChart(P, 10, 'Fréquence cardiaque', 'bpm') : '';
+  return P.length > 1 ? distChart(P, 10, 'Fréquence cardiaque', 'bpm', 'hr') : '';
 }
-function distChart(P, minSpan, what, unit) {
+function distChart(P, minSpan, what, unit, tone = '') {
   const W = 320, H = 120, L = 36, R = 8, T = 10, B = 22;
   const maxD = P[P.length - 1][0] || 1;
   let min = Math.min(...P.map(p => p[1])), max = Math.max(...P.map(p => p[1]));
@@ -1369,7 +1377,7 @@ function distChart(P, minSpan, what, unit) {
   const x = d => L + d / maxD * (W - L - R), y = v => T + (1 - (v - min) / (max - min)) * (H - T - B);
   const line = P.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ');
   const ticks = []; for (let v = min; v <= max + 1e-9; v += st) ticks.push(v);
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${what}, de ${Math.round(lo)} à ${Math.round(hi)} ${unit}">
+  return `<svg class="chart ${tone}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${what}, de ${Math.round(lo)} à ${Math.round(hi)} ${unit}">
     ${ticks.map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('')}
     <path class="area" d="${line} L${x(maxD)},${H - B} L${L},${H - B} Z"/><path class="line" d="${line}"/>
     <text x="${L}" y="${H - 6}">0 km</text><text x="${W - R}" y="${H - 6}" text-anchor="end">${fmtKm(maxD)} km</text></svg>`;
@@ -1397,16 +1405,24 @@ function renderWalk(main, id) {
   if (!w) { walkView = null; return renderWalks(main); }
   setTitle(w.name || 'Marche', () => { walkView = null; render(); });
   const pace = paceOf(w);
+  const hasEle = w.points && w.points.some(p => p[2] != null);
+  const pauses = w.moving && w.duration - w.moving >= 30 ? w.duration - w.moving : 0;
   main.innerHTML = `
-    <div class="level-head"><div class="small muted num">${fmtLong(w.date)} · ${w.source === 'gpx' ? 'fichier GPX' : 'saisie rapide'}</div>
-      <h2 class="num">${fmtKm(w.distance)} km${w.duration ? ` en ${fmtDur(w.duration)}` : ''}</h2></div>
-    <div class="panel stats">
-      <div><span class="small muted">Allure</span><strong class="num ${pace && pace <= TARGET_PACE ? 'ok' : ''}">${pace ? fmtPace(pace) + '/km' : '–'}</strong></div>
-      <div><span class="small muted">Vitesse</span><strong class="num">${pace ? fr((3600 / pace).toFixed(1)) + ' km/h' : '–'}</strong></div>
-      <div><span class="small muted">Dénivelé</span><strong class="num">${w.points && w.points.some(p => p[2] != null) ? `+${w.gain} m` : '–'}</strong></div>
+    <section class="hero walk">
+      <div class="hero-meta">${fmtLong(w.date)} · ${w.kind === 'mixte' ? 'marche et footing' : 'marche pure'}</div>
+      <div class="hero-main"><div><div class="hero-big"><span class="big">${fmtKm(w.distance)}</span><small>km</small></div>
+        <div class="hero-sub">${w.duration ? `${fmtDur(w.duration)}${pace ? ` · ${fmtPace(pace)} /km` : ''}` : 'saisie rapide'}</div></div>
+        ${w.points && w.points.length > 1 ? routeSvg(w, 96, true) : ''}</div>
+    </section>
+    <div class="tiles">
+      ${tile('Allure', pace ? fmtPace(pace) : '–', pace ? '/km' : '', pace && pace <= TARGET_PACE ? 'go' : '')}
+      ${tile('Vitesse', pace ? fr((3600 / pace).toFixed(1)) : '–', pace ? 'km/h' : '')}
+      ${w.moving ? tile('En mouvement', fmtDurShort(w.moving), '', '', pauses ? `<span class="t-foot">${fmtDurShort(pauses)} de pause</span>` : '') : ''}
+      ${hasEle ? tile('Dénivelé', `+${w.gain}`, 'm', 'alt', `<span class="t-foot">${w.eleMin} à ${w.eleMax} m</span>`) : ''}
+      ${w.hrAvg ? tile('Cardio moyen', w.hrAvg, 'bpm', 'hr', `<span class="t-foot">max ${w.hrMax}</span>`) : ''}
+      ${w.splits && w.splits.length > 1 ? tile('Meilleur km', fmtPace(Math.min(...w.splits)), '/km', 'walk', `<span class="t-foot">km ${w.splits.indexOf(Math.min(...w.splits)) + 1}</span>`) : ''}
     </div>
-    ${walkDetails(w)}
-    ${w.points && w.points.length > 1 ? `<section><h2 class="section-title">Tracé</h2><div class="panel">${routeSvg(w)}</div></section>` : ''}
+    ${w.points && w.points.length > 1 ? `<section><h2 class="section-title">Tracé</h2><div class="panel route-panel">${routeSvg(w)}</div></section>` : ''}
     ${elevationSvg(w) ? `<section><h2 class="section-title"><span>Altitude</span><span class="num">+${w.gain} m · −${w.loss} m</span></h2><div class="panel">${elevationSvg(w)}</div></section>` : ''}
     ${hrSvg(w) ? `<section><h2 class="section-title"><span>Fréquence cardiaque</span><span class="num">moy. ${w.hrAvg} · max ${w.hrMax} bpm</span></h2><div class="panel">${hrSvg(w)}</div></section>` : ''}
     ${w.splits && w.splits.length ? `<section><h2 class="section-title"><span>Temps au kilomètre</span><span class="num">visée ${fmtPace(TARGET_PACE)}</span></h2>
