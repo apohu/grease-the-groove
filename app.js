@@ -4,7 +4,7 @@
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.5.1';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -118,6 +118,7 @@ function defaultGtg() {
     split: false,          // false : les 6 exercices chaque jour ; true : 3 + 3 en alternance
     week: { lun: 'maison', mar: 'agence', mer: 'maison', jeu: 'agence', ven: 'maison', sam: 'chargee', dim: 'chargee' },
     sizes: {},             // taille de série réglée à la main : exId -> { i, reps, testId }
+    slots: { agence: 2, chargee: 2 }, // créneaux de séries ces jours-là
     film: false,           // rappel « filme-toi » (désactivé par défaut)
     startedAt: null,
   };
@@ -154,7 +155,7 @@ function migrate(s) {
     profile: { ...d.profile, ...(s.profile || {}), measurements: Array.isArray(s.profile && s.profile.measurements) ? s.profile.measurements : [] },
     schedule: { ...d.schedule, ...(s.schedule || {}) },
     settings: { ...d.settings, ...(s.settings || {}) },
-    gtg: { ...d.gtg, ...(s.gtg || {}), week: { ...d.gtg.week, ...((s.gtg && s.gtg.week) || {}) }, sizes: { ...((s.gtg && s.gtg.sizes) || {}) } },
+    gtg: { ...d.gtg, ...(s.gtg || {}), week: { ...d.gtg.week, ...((s.gtg && s.gtg.week) || {}) }, sizes: { ...((s.gtg && s.gtg.sizes) || {}) }, slots: { ...d.gtg.slots, ...((s.gtg && s.gtg.slots) || {}) } },
     days: s.days && typeof s.days === 'object' ? s.days : {},
     exercises: Array.isArray(s.exercises) && s.exercises.length ? s.exercises : d.exercises,
     sessions: Array.isArray(s.sessions) ? s.sessions : [],
@@ -779,16 +780,17 @@ function editLevels(ex) {
 // exercice se calcule sur sa semaine type, et la part du jour dépend du type de journée.
 const DAY_TYPES = {
   maison: { label: 'Maison', hint: 'Une série à chaque pause' },
-  agence: { label: 'Agence', hint: 'Fenêtre le matin et le soir' },
+  agence: { label: 'Agence', hint: 'Le matin avant de partir, à midi' },
   chargee: { label: 'Chargée', hint: 'Quelques séries quand tu peux' },
   repos: { label: 'Repos', hint: 'Pas de séries aujourd\'hui' },
 };
 const RHYTHMS = [[120, '2 h'], [60, '1 h'], [30, '30 min']];
-// Créneaux par jour : une journée maison de 9 h à 17 h ; agence = 2 créneaux le matin + 2 le soir
-// (une série toutes les 10-15 min) ; chargée = 2 créneaux quand tu peux.
+// Créneaux par jour : une journée maison de 9 h à 17 h selon le rythme choisi ; agence et chargée :
+// nombre de créneaux réglable (agence par défaut : avant de partir le matin et à midi, sans transpirer).
 function slotsFor(type) {
   if (type === 'maison') return Math.round(480 / (state.gtg.rhythm || 120));
-  return { agence: 4, chargee: 2, repos: 0 }[type] ?? 0;
+  if (type === 'repos') return 0;
+  return Math.max(0, (state.gtg.slots || {})[type] ?? 2);
 }
 const PER_SLOT = 3; // exercices par créneau, comme dans les exemples du livre
 const LIGHT = ['gainage']; // le gainage revient moins souvent : une fois par jour au plus
@@ -992,6 +994,8 @@ function renderPlan(main) {
         <button type="button" role="radio" aria-checked="${!state.gtg.split}" class="${!state.gtg.split ? 'on' : ''}" data-split="0">Les 6 chaque jour</button>
         <button type="button" role="radio" aria-checked="${!!state.gtg.split}" class="${state.gtg.split ? 'on' : ''}" data-split="1">3 + 3 en alternance</button></div>
         ${state.gtg.split ? `<span class="small muted">Un jour ${esc(exs.filter(e => groupOf(e) === 0).map(e => e.name).join(', '))}, le suivant ${esc(exs.filter(e => groupOf(e) === 1).map(e => e.name).join(', '))}.</span>` : ''}</div>
+      <div class="grid2">${['agence', 'chargee'].map(t => `<label class="field"><span>Créneaux un jour ${DAY_TYPES[t].label.toLowerCase()}</span>
+        <select data-slots="${t}" id="slots-${t}">${[1, 2, 3, 4, 6].map(n => `<option value="${n}" ${slotsFor(t) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>`).join('')}</div>
       <div class="field"><span>Ma semaine type</span>
         <div class="list">${DAYS.map(([k, label]) => `<label class="day"><span class="dname">${label}</span>
           <select data-week="${k}" id="week-${k}" aria-label="Type de journée le ${label}">${Object.entries(DAY_TYPES).map(([t, d]) =>
@@ -1037,6 +1041,7 @@ function renderPlan(main) {
   $$('[data-rhythm]', main).forEach(b => b.onclick = () => { state.gtg.rhythm = +b.dataset.rhythm; save(); render(); });
   $$('[data-split]', main).forEach(b => b.onclick = () => { state.gtg.split = b.dataset.split === '1'; save(); render(); });
   $$('[data-week]', main).forEach(s => s.onchange = () => { state.gtg.week[s.dataset.week] = s.value; save(); render(); });
+  $$('[data-slots]', main).forEach(s => s.onchange = () => { state.gtg.slots[s.dataset.slots] = +s.value; save(); render(); });
   $('#gtg-film').onchange = e => { state.gtg.film = e.target.checked; save(); render(); };
 }
 function fmtLong(iso) {
