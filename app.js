@@ -4,7 +4,7 @@
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.7.1';
+const APP_VERSION = '0.7.2';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -1101,11 +1101,18 @@ const testPick = {};
 const testDraft = {};
 function renderTest(main) {
   setTitle('Séance test', () => go('plan'));
-  const exs = state.exercises;
+  // Ordre conseillé : on alterne tirage, jambes, poussée, gainage, pour ne pas fatiguer deux fois les mêmes muscles.
+  const ORDER = ['tractions', 'pistol', 'pompes', 'gainage', 'dips', 'lsit'];
+  const exs = state.exercises.slice().sort((a, b) => (ORDER.indexOf(a.id) + 1 || 99) - (ORDER.indexOf(b.id) + 1 || 99));
   main.innerHTML = `
-    <div class="notice"><p><strong>Un test, pas une séance.</strong> Fais-le reposé, un jour sans séries avant.
-      Pour chaque exercice, choisis le niveau le plus dur que tu penses réussir proprement, et fais ton max une seule fois.
-      Si tu dépasses l'objectif, tu auras le feu vert pour tester le niveau suivant. Laisse vide ce que tu ne testes pas.</p></div>
+    <div class="notice" style="gap:8px"><p><strong>Un seul max par exercice.</strong> Fais-le reposé. On monte, on ne descend pas :</p>
+      <ol class="steps">
+        <li>Commence au niveau facile : 2 ou 3 répétitions tranquilles, c'est ton échauffement.</li>
+        <li>Essaie 1 seule répétition propre du niveau au-dessus. Si elle passe facilement, essaie le suivant.</li>
+        <li>Arrête de monter dès qu'une répétition est dure ou pas propre.</li>
+        <li>Après 2 min de repos, fais ton max une fois, au dernier niveau où tu fais au moins 3 répétitions propres. C'est ce chiffre que tu notes.</li>
+      </ol>
+      <p class="small secondary">Exercices dans l'ordre conseillé, 2 à 3 min de repos entre chacun. Tu peux étaler le test sur deux jours : laisse vide ce que tu ne testes pas.</p></div>
     <form class="panel form" id="test-form">${exs.map(e => {
       if (!(e.id in testPick)) testPick[e.id] = grooveLevel(e) < 0 ? 0 : grooveLevel(e);
       const i = testPick[e.id];
