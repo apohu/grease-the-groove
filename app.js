@@ -4,7 +4,7 @@
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.7.2';
+const APP_VERSION = '0.8.0';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -96,10 +96,37 @@ function bookExercises() {
     ] },
   };
 }
+// Option d'un niveau : ce qui change la difficulté sans changer d'exercice (élastique, hauteur, aide).
+// { label, choices: [...] } pour une liste, ou { label, unit } pour une valeur libre.
+const LEVEL_OPTS = {
+  'Tractions australiennes': { label: 'Hauteur de la barre', unit: 'cm' },
+  'Tractions avec élastique': { label: 'Élastique', choices: ['30 kg', '20 kg', '10 kg'] },
+  'Pompes mains surélevées': { label: 'Hauteur du support', unit: 'cm' },
+  'Squats profonds assistés': { label: 'Aide', choices: ['Barre à 2 mains', 'Barre à 1 main'] },
+  'Pistol squats assistés': { label: 'Aide', choices: ['Chaise ou banc', 'Barre à 2 mains', 'Barre à 1 main'] },
+  'Dips sur support, jambes pliées': { label: 'Support', choices: ['Chaise', 'Banc', 'Barre basse', 'Muret'] },
+};
+function addDefaultOpts(ex) {
+  (ex.levels || []).forEach(l => { if (!l.opt && !l.optSet && LEVEL_OPTS[l.name]) l.opt = JSON.parse(JSON.stringify(LEVEL_OPTS[l.name])); });
+}
+function optField(l, id, val = '') {
+  if (!l || !l.opt) return '';
+  const o = l.opt;
+  const ch = o.choices && o.choices.length ? o.choices : null;
+  return `<label class="field"><span>${esc(o.label)}${o.unit ? ` (${esc(o.unit)})` : ''}</span>${ch
+    ? `<select data-opt id="${id}"><option value="">Non précisé</option>${ch.map(c => `<option ${c === val ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`
+    : `<input data-opt id="${id}" type="text" inputmode="${o.unit ? 'decimal' : 'text'}" value="${esc(val)}" placeholder="${o.unit ? 'Ex. 40' : 'Facultatif'}">`}</label>`;
+}
+const optText = (l, v) => (v ? `${l && l.opt ? l.opt.label.toLowerCase() + ' ' : ''}${v}${l && l.opt && l.opt.unit ? ' ' + l.opt.unit : ''}` : '');
+function lastOpt(ex, i) {
+  const list = atLevel(ex, i).filter(x => x.opt);
+  return list.length ? list[list.length - 1].opt : '';
+}
 function defaultExercises() {
   const book = bookExercises();
   return ['tractions', 'pompes', 'pistol', 'gainage', 'dips', 'lsit']
-    .map(id => ({ id, ...book[id], current: 0, fromBook: true }));
+    .map(id => ({ id, ...book[id], current: 0, fromBook: true }))
+    .map(ex => { addDefaultOpts(ex); return ex; });
 }
 
 function defaultState() {
@@ -148,6 +175,7 @@ function migrate(s) {
     if (ex.fromBook || !book[ex.id] || (s.sessions || []).some(x => x.exId === ex.id)) return;
     Object.assign(ex, { levels: book[ex.id].levels, current: 0, fromBook: true });
   });
+  (s.exercises || []).forEach(ex => { if (ex.fromBook) addDefaultOpts(ex); });
   // Précision d'Arthur (L-sit niveau 1 : sur un support).
   const ls = (s.exercises || []).find(e => e.id === 'lsit');
   if (ls && ls.fromBook && ls.levels[0] && ls.levels[0].name === 'Se soulever') {
@@ -536,6 +564,7 @@ function renderExercise(main, id) {
         <label class="field"><span>Date</span><input type="date" name="date" id="log-date" value="${today()}" required></label>
         <label class="field"><span>Note</span><input type="text" name="note" id="log-note" placeholder="Facultatif"></label>
       </div>
+      ${optField(sel, 'log-opt', sel ? lastOpt(ex, selI) : '')}
       ${sel && sel.cond ? `<label class="check"><input type="checkbox" name="formOk" id="log-form-ok">
         <span><span style="font-weight:500">Forme respectée</span><span class="small secondary" style="display:block">${esc(sel.cond)}</span></span></label>` : ''}
       <button class="btn primary block" type="submit" ${sel ? '' : 'disabled'}>Enregistrer</button>
@@ -573,7 +602,7 @@ function renderExercise(main, id) {
           <td class="num">${fmtDate(s.date)}</td>
           <td class="num">${lv ? levelLabel(ex, s.level) : '–'}</td>
           <td style="white-space:normal"><span class="num">${s.sets.join(' · ')} ${lv ? unitLabel(lvUnit(ex, lv)) : ''}</span>${ok ? ` <span class="small ok">validé</span>` : ''}
-            ${lv ? `<div class="small muted">${esc(lv.name)}</div>` : ''}
+            ${lv ? `<div class="small muted">${esc(lv.name)}${s.opt ? ` · ${esc(optText(lv, s.opt))}` : ''}</div>` : ''}
             ${s.note ? `<div class="small muted">${esc(s.note)}</div>` : ''}</td>
           <td><button class="icon-btn" data-del="${esc(s.id)}" aria-label="Supprimer la séance du ${fmtDate(s.date)}">${icon('x')}</button></td>
         </tr>`;
@@ -600,6 +629,8 @@ function renderExercise(main, id) {
     const before = levelStatus(ex);
     const sess = { id: uid(), date: f.date.value || today(), exId: ex.id, level: selI, sets, note: f.note.value.trim(), test: true };
     if (sel.cond) sess.formOk = !!(f.formOk && f.formOk.checked);
+    const ov = $('#log-opt') ? $('#log-opt').value.trim() : '';
+    if (ov) sess.opt = ov;
     state.sessions.push(sess);
     persist.putSession(sess);
     const after = levelStatus(ex);
@@ -713,6 +744,10 @@ function editLevels(ex) {
             <label class="field"><span>Séances réussies</span><input data-k="times" id="ed-${i}-times" type="number" inputmode="numeric" min="1" value="${l.times}"></label>
           </div>
           <label class="field"><span>Condition de forme (facultatif)</span><input data-k="cond" id="ed-${i}-cond" value="${esc(l.cond || '')}" placeholder="Ex. : amplitude complète"></label>
+          <div class="grid2">
+            <label class="field"><span>Option (facultatif)</span><input data-k="optLabel" id="ed-${i}-optLabel" value="${esc(l.opt ? l.opt.label : '')}" placeholder="Ex. : Élastique"></label>
+            <label class="field"><span>Choix ou unité</span><input data-k="optChoices" id="ed-${i}-optChoices" value="${esc(l.opt ? (l.opt.choices ? l.opt.choices.join(', ') : l.opt.unit || '') : '')}" placeholder="30 kg, 20 kg… ou cm"></label>
+          </div>
           <label class="field"><span>Conseil d'exécution (facultatif)</span><textarea data-k="tip" id="ed-${i}-tip" rows="2">${esc(l.tip || '')}</textarea></label>
           <label class="check"><input type="checkbox" data-k="perSide" id="ed-${i}-perSide" ${l.perSide ? 'checked' : ''}><span>Objectif à réussir de chaque côté (gauche et droite)</span></label>
           <label class="check"><input type="checkbox" data-k="optional" id="ed-${i}-optional" ${l.optional ? 'checked' : ''}><span>Niveau optionnel, on peut le sauter</span></label>
@@ -735,6 +770,17 @@ function editLevels(ex) {
           if (k === 'name') l.name = inp.value;
           else if (k === 'cond') { const c = inp.value.trim(); if (c) l.cond = c; else delete l.cond; }
           else if (k === 'tip') { const t = inp.value.trim(); if (t) l.tip = t; else delete l.tip; }
+          else if (k === 'optLabel') { l._optLabel = inp.value.trim(); }
+          else if (k === 'optChoices') {
+            const lab = l._optLabel; delete l._optLabel;
+            const v = inp.value.trim();
+            if (!lab) { if (l.opt) l.optSet = true; delete l.opt; }
+            else {
+              const parts = v.split(',').map(x => x.trim()).filter(Boolean);
+              l.opt = parts.length > 1 ? { label: lab, choices: parts } : (v ? { label: lab, unit: v } : { label: lab });
+              l.optSet = true;
+            }
+          }
           else if (k === 'perSide') { if (inp.checked) { l.perSide = true; l.sets = 2; } else if (l.perSide) { delete l.perSide; l.sets = 1; } }
           else if (k === 'optional' || k === 'bis') { if (inp.checked) l[k] = true; else delete l[k]; }
           else if (k === 'unit') { if (inp.value === draft.unit) delete l.unit; else l.unit = inp.value; }
@@ -968,7 +1014,7 @@ function renderPlan(main) {
           <div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(e.name)}</span>
             <span class="count ${left ? '' : 'ok'}"><b>${d.sets || 0}</b>/${share}</span></div>
           <div class="pbar"><span style="width:${share ? Math.min(100, (d.sets || 0) / share * 100) : 0}%"></span></div>
-          ${g.reps ? `<div class="small secondary"><button type="button" class="size-link" data-size="${esc(e.id)}" aria-label="Régler la taille des séries de ${esc(e.name)}">Séries de <span class="num">${g.reps} ${unitLabel(u)}${l.perSide ? ' par jambe' : ''}</span>${g.custom ? ' (réglée)' : ''}</button> · ${esc(l.name)}</div>`
+          ${g.reps ? `<div class="small secondary"><button type="button" class="size-link" data-size="${esc(e.id)}" aria-label="Régler la taille des séries de ${esc(e.name)}">Séries de <span class="num">${g.reps} ${unitLabel(u)}${l.perSide ? ' par jambe' : ''}</span>${g.custom ? ' (réglée)' : ''}</button> · ${esc(l.name)}${lastOpt(e, g.i) ? ` · ${esc(optText(l, lastOpt(e, g.i)))}` : ''}</div>`
             : `<div class="small secondary">Fais d'abord un test de ton max.</div>`}
           ${g.basis === 'prev' ? `<div class="small muted">Ton max en ${esc(e.levels[g.testI].name.toLowerCase())} est encore faible (${g.max}) : on consolide le niveau d'avant.</div>` : ''}
           ${due ? `<div class="small" style="color:var(--wait)">${g.basis === 'untested' ? `Teste ton max en ${esc(e.levels[g.testI].name.toLowerCase())}` : 'Refais un test de max'} quand tu es reposé.</div>` : ''}
@@ -1126,6 +1172,7 @@ function renderTest(main) {
         <div class="field"><span>Ton max en ${unitLong(u)}${l.perSide ? ' (gauche, droite)' : ''}</span>
           <div class="sets">${(l.perSide ? ['Gauche', 'Droite'] : ['Max']).map((p, k) =>
             `<input type="number" inputmode="numeric" min="0" step="1" data-v="${k}" id="t-${esc(e.id)}-${k}" placeholder="${p}" aria-label="${esc(e.name)} : ${p}">`).join('')}</div></div>
+        ${optField(l, `t-${esc(e.id)}-opt`, lastOpt(e, i))}
         ${l.cond ? `<label class="check"><input type="checkbox" data-ok id="t-${esc(e.id)}-ok"><span><span style="font-weight:500">Forme respectée</span><span class="small secondary" style="display:block">${esc(l.cond)}</span></span></label>` : ''}
       </div>`;
     }).join('')}
@@ -1137,7 +1184,7 @@ function renderTest(main) {
   Object.entries(testDraft).forEach(([id, v]) => { const el = document.getElementById(id); if (el) { if (el.type === 'checkbox') el.checked = v; else el.value = v; } });
   $$('[data-lvl]', main).forEach(s => s.onchange = () => {
     const row = s.closest('[data-ex]');
-    $$('input', main).forEach(el => { if (el.closest('[data-ex]') !== row) testDraft[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+    $$('input, select[data-opt]', main).forEach(el => { if (el.id && el.closest('[data-ex]') !== row) testDraft[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
     testPick[row.dataset.ex] = +s.value; render();
   });
   $('#test-form').onsubmit = ev => {
@@ -1150,6 +1197,8 @@ function renderTest(main) {
       if (!vals.some(Number.isFinite)) return;
       const s = { id: uid(), date, exId: e.id, level: i, sets: vals.map(v => (Number.isFinite(v) && v >= 0 ? v : 0)), note: 'Séance test', test: true };
       if (l.cond) s.formOk = !!($('[data-ok]', row) || {}).checked;
+      const oe = $('[data-opt]', row);
+      if (oe && oe.value.trim()) s.opt = oe.value.trim();
       state.sessions.push(s); persist.putSession(s);
       e.current = stepRange(e, i)[0];
       n++;
