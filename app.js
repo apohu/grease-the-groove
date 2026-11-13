@@ -4,7 +4,7 @@
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.8.0';
+const APP_VERSION = '0.8.1';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -105,6 +105,12 @@ const LEVEL_OPTS = {
   'Squats profonds assistés': { label: 'Aide', choices: ['Barre à 2 mains', 'Barre à 1 main'] },
   'Pistol squats assistés': { label: 'Aide', choices: ['Chaise ou banc', 'Barre à 2 mains', 'Barre à 1 main'] },
   'Dips sur support, jambes pliées': { label: 'Support', choices: ['Chaise', 'Banc', 'Barre basse', 'Muret'] },
+  // Appui des mains : poignets à plat ou droits (poignées de la chaise romaine), pour des tests comparables.
+  'Pompes à genoux': { label: 'Appui', choices: ['Mains à plat', 'Poings', 'Poignées'] },
+  'Pompes négatives': { label: 'Appui', choices: ['Mains à plat', 'Poings', 'Poignées'] },
+  'Pompes': { label: 'Appui', choices: ['Mains à plat', 'Poings', 'Poignées'] },
+  'Se soulever sur un support': { label: 'Appui', choices: ['Mains à plat', 'Poings', 'Poignées'] },
+  'Se soulever au sol': { label: 'Appui', choices: ['Mains à plat', 'Poings', 'Poignées'] },
 };
 function addDefaultOpts(ex) {
   (ex.levels || []).forEach(l => { if (!l.opt && !l.optSet && LEVEL_OPTS[l.name]) l.opt = JSON.parse(JSON.stringify(LEVEL_OPTS[l.name])); });

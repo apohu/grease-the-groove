@@ -1,5 +1,5 @@
 // Service worker : met l'appli en cache pour qu'elle marche hors ligne.
-const CACHE = 'gtg-v0.8.0';
+const CACHE = 'gtg-v0.8.1';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png',
   'fonts/plex-sans.woff2'];
