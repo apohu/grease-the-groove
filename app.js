@@ -4,7 +4,7 @@
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.8.1';
+const APP_VERSION = '0.8.2';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -36,6 +36,7 @@ const ICONS = {
   down: '<path d="m6 9 6 6 6-6"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   minus: '<path d="M5 12h14"/>',
+  pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
   footprints: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
 };
 const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -1023,10 +1024,12 @@ function renderPlan(main) {
           ${g.reps ? `<div class="small secondary"><button type="button" class="size-link" data-size="${esc(e.id)}" aria-label="Régler la taille des séries de ${esc(e.name)}">Séries de <span class="num">${g.reps} ${unitLabel(u)}${l.perSide ? ' par jambe' : ''}</span>${g.custom ? ' (réglée)' : ''}</button> · ${esc(l.name)}${lastOpt(e, g.i) ? ` · ${esc(optText(l, lastOpt(e, g.i)))}` : ''}</div>`
             : `<div class="small secondary">Fais d'abord un test de ton max.</div>`}
           ${g.basis === 'prev' ? `<div class="small muted">Ton max en ${esc(e.levels[g.testI].name.toLowerCase())} est encore faible (${g.max}) : on consolide le niveau d'avant.</div>` : ''}
+          ${d.short >= 2 && g.reps > 1 ? `<div class="small" style="color:var(--wait)">${d.short} séries écourtées aujourd'hui : la série est trop dure. <button type="button" class="size-link" data-lower="${esc(e.id)}">Passer à ${g.reps - 1} ${unitLabel(u)}</button></div>` : ''}
           ${due ? `<div class="small" style="color:var(--wait)">${g.basis === 'untested' ? `Teste ton max en ${esc(e.levels[g.testI].name.toLowerCase())}` : 'Refais un test de max'} quand tu es reposé.</div>` : ''}
         </div>
         ${g.reps ? `<div class="groove-btns">
           <button class="icon-btn" data-minus="${esc(e.id)}" ${d.sets ? '' : 'disabled'} aria-label="Retirer une série de ${esc(e.name)}">${icon('minus')}</button>
+          <button class="icon-btn" data-custom="${esc(e.id)}" aria-label="Noter une série avec un autre nombre, ${esc(e.name)}">${icon('pencil')}</button>
           <button class="btn sm ${left ? 'primary' : ''}" data-plus="${esc(e.id)}" aria-label="Ajouter une série de ${esc(e.name)}">${icon('plus')} Série</button>
         </div>` : `<button class="btn sm" data-open="${esc(e.id)}">Tester</button>`}
       </div>`;
@@ -1085,16 +1088,46 @@ function renderPlan(main) {
     if (b.dataset.type === state.gtg.week[dayKey(iso)]) delete d.type; else d.type = b.dataset.type;
     putDay(d); render();
   });
-  $$('[data-plus]', main).forEach(b => b.onclick = () => {
-    const e = exById(b.dataset.plus), g = sets[e.id];
+  // Ajoute une série ; `reps` < série prévue = série écourtée (comptée à part pour proposer d'alléger).
+  const addSet = (e, reps) => {
+    const g = sets[e.id];
     const d = clone(dayDoc(iso));
     const x = d.done[e.id] || { sets: 0, reps: 0 };
-    d.done[e.id] = { sets: x.sets + 1, reps: x.reps + g.reps, level: g.i };
+    const short = reps < g.reps;
+    d.done[e.id] = { ...x, sets: x.sets + 1, reps: x.reps + reps, level: g.i, short: (x.short || 0) + (short ? 1 : 0) };
     putDay(d);
     if (!state.gtg.startedAt) { state.gtg.startedAt = iso; save(); }
     const share = todayShare(e, iso);
-    toast(d.done[e.id].sets === share ? `${e.name} : séries du jour faites` : `${e.name} : ${d.done[e.id].sets}/${share}`);
+    toast(short ? `${e.name} : série de ${reps} notée. Pas grave, la prochaine sera meilleure`
+      : d.done[e.id].sets === share ? `${e.name} : séries du jour faites` : `${e.name} : ${d.done[e.id].sets}/${share}`);
     render();
+  };
+  $$('[data-plus]', main).forEach(b => b.onclick = () => { const e = exById(b.dataset.plus); addSet(e, sets[e.id].reps); });
+  $$('[data-custom]', main).forEach(b => b.onclick = () => {
+    const e = exById(b.dataset.custom), g = sets[e.id], l = e.levels[g.i];
+    let v = g.reps;
+    const draw = () => {
+      openModal(`<h2>${esc(e.name)} : combien as-tu fait ?</h2>
+        <p class="secondary">${esc(l.name)}, série prévue : <span class="num">${g.reps} ${unitLabel(lvUnit(e, l))}</span>${l.perSide ? ' par jambe' : ''}.</p>
+        <div class="row" style="justify-content:center;gap:24px">
+          <button class="icon-btn" id="cu-minus" aria-label="Moins" ${v <= 0 ? 'disabled' : ''}>${icon('minus')}</button>
+          <span class="num" style="font-size:40px;line-height:48px;min-width:3ch;text-align:center">${v}</span>
+          <button class="icon-btn" id="cu-plus" aria-label="Plus">${icon('plus')}</button>
+        </div>
+        <p class="small muted">Une série ratée n'est pas un échec : c'est le signe que la série est un peu trop dure. Si ça arrive deux fois dans la journée, l'appli te proposera de l'alléger.</p>
+        <div class="actions"><button class="btn" id="cu-cancel">Annuler</button><button class="btn primary" id="cu-ok">Noter la série</button></div>`);
+      $('#cu-minus').onclick = () => { v = Math.max(0, v - 1); draw(); };
+      $('#cu-plus').onclick = () => { v += 1; draw(); };
+      $('#cu-cancel').onclick = closeModal;
+      $('#cu-ok').onclick = () => { closeModal(); addSet(e, v); };
+    };
+    draw();
+  });
+  $$('[data-lower]', main).forEach(b => b.onclick = () => {
+    const e = exById(b.dataset.lower), g = sets[e.id];
+    state.gtg.sizes[e.id] = { i: g.i, reps: Math.max(1, g.reps - 1), testId: g.test ? g.test.id : null };
+    const d = clone(dayDoc(iso)); if (d.done[e.id]) { d.done[e.id].short = 0; putDay(d); }
+    save(); toast(`${e.name} : séries de ${g.reps - 1}`); render();
   });
   $$('[data-minus]', main).forEach(b => b.onclick = () => {
     const e = exById(b.dataset.minus), g = sets[e.id];
