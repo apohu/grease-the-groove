@@ -4,7 +4,7 @@
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.7.0';
+const APP_VERSION = '0.7.1';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -13,6 +13,7 @@ const DAYS = [
 
 const MEASURES = [
   ['poids', 'Poids', 'kg'],
+  ['grasse', 'Masse grasse', '%'],
   ['bras', 'Tour de bras', 'cm'],
   ['poitrine', 'Tour de poitrine', 'cm'],
   ['taille', 'Tour de taille', 'cm'],
@@ -1482,6 +1483,15 @@ function renderProfile(main) {
     </section>`;
     const wpts = series('poids').map(m => ({ x: m.date, y: m.poids }));
     if (wpts.length >= 2) html += `<section><h2 class="section-title">Poids</h2><div class="panel">${lineChart(wpts, { unit: 'kg', label: 'Évolution du poids en kg' })}</div></section>`;
+    // Masse grasse (balance à impédance : imprécise, on regarde surtout la tendance).
+    const gpts = series('grasse').map(m => ({ x: m.date, y: m.grasse }));
+    const both = ms.filter(m => m.poids != null && m.grasse != null);
+    const lastB = both[both.length - 1];
+    if (gpts.length >= 2 || lastB) html += `<section><h2 class="section-title">Masse grasse</h2><div class="panel" style="display:grid;gap:12px">
+      ${lastB ? `<div class="tiles">${tile('Masse grasse', fr((lastB.poids * lastB.grasse / 100).toFixed(1)), 'kg', 'hr')}${tile('Masse maigre', fr((lastB.poids * (1 - lastB.grasse / 100)).toFixed(1)), 'kg', 'go')}</div>` : ''}
+      ${gpts.length >= 2 ? lineChart(gpts, { unit: '%', label: 'Évolution de la masse grasse en %' }) : ''}
+      <p class="small muted">Les balances à impédance sont imprécises et varient avec l'hydratation : pèse-toi dans les mêmes conditions (vendredi matin, à jeun, après être allé aux toilettes) et regarde la tendance plutôt qu'un chiffre isolé.</p>
+    </div></section>`;
   }
 
   html += `<section>
