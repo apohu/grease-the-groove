@@ -4,7 +4,7 @@
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.8.2';
+const APP_VERSION = '0.8.3';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -1021,7 +1021,7 @@ function renderPlan(main) {
           <div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(e.name)}</span>
             <span class="count ${left ? '' : 'ok'}"><b>${d.sets || 0}</b>/${share}</span></div>
           <div class="pbar"><span style="width:${share ? Math.min(100, (d.sets || 0) / share * 100) : 0}%"></span></div>
-          ${g.reps ? `<div class="small secondary"><button type="button" class="size-link" data-size="${esc(e.id)}" aria-label="Régler la taille des séries de ${esc(e.name)}">Séries de <span class="num">${g.reps} ${unitLabel(u)}${l.perSide ? ' par jambe' : ''}</span>${g.custom ? ' (réglée)' : ''}</button> · ${esc(l.name)}${lastOpt(e, g.i) ? ` · ${esc(optText(l, lastOpt(e, g.i)))}` : ''}</div>`
+          ${g.reps ? `<div class="small secondary"><button type="button" class="size-link" data-size="${esc(e.id)}" aria-label="Régler la taille des séries de ${esc(e.name)}">Séries de <span class="num">${g.reps} ${unitLabel(u)}${l.perSide ? ' par jambe' : ''}</span>${g.custom ? ' · réglée' : ''}${icon('down')}</button><br>${esc(l.name)}${lastOpt(e, g.i) ? ` · ${esc(optText(l, lastOpt(e, g.i)))}` : ''}</div>`
             : `<div class="small secondary">Fais d'abord un test de ton max.</div>`}
           ${g.basis === 'prev' ? `<div class="small muted">Ton max en ${esc(e.levels[g.testI].name.toLowerCase())} est encore faible (${g.max}) : on consolide le niveau d'avant.</div>` : ''}
           ${d.short >= 2 && g.reps > 1 ? `<div class="small" style="color:var(--wait)">${d.short} séries écourtées aujourd'hui : la série est trop dure. <button type="button" class="size-link" data-lower="${esc(e.id)}">Passer à ${g.reps - 1} ${unitLabel(u)}</button></div>` : ''}
@@ -1050,7 +1050,7 @@ function renderPlan(main) {
           <td class="num ${w.sets >= goal && goal ? 'ok' : ''}">${w.sets}/${goal}</td>
           <td class="num">${w.reps} ${u}</td></tr>`;
       }).join('')}</tbody></table></div></div>
-    <p class="small muted" style="padding:0 4px">Le volume compte les répétitions (ou les secondes) faites en séries. Pour ajuster la taille d'une série, touche « Séries de… » plus haut.</p>
+    <p class="small muted" style="padding:0 4px">Le volume compte les répétitions (ou les secondes) faites en séries. Pour ajuster la taille d'une série, touche le bouton « Séries de… » sous l'exercice.</p>
     <div class="grid2"><button class="btn" data-go-test>Séance test</button><button class="btn" id="day-prev">${icon('chevronLeft')} Jour précédent</button></div>
     ${!isToday ? `<button class="btn block" id="day-today">Revenir à aujourd'hui</button>` : ''}
   </section>`;

@@ -321,7 +321,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .test-row { display: grid; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
 .day select { width: auto; min-width: 128px; }
 .seg button { min-width: 0; }
-.size-link { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.size-link { border: 1px solid var(--line); background: var(--raised); border-radius: 999px; padding: 2px 10px; margin: 4px 0 2px; font: inherit; color: var(--text); cursor: pointer; display: inline-block; white-space: nowrap; }
+.size-link .icon { width: 14px; height: 14px; vertical-align: -2px; margin-left: 2px; }
 /* Marche */
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .stats > div { display: grid; gap: 2px; min-width: 0; align-content: start; }
@@ -410,7 +411,7 @@ svg.chart.hr .line { stroke: var(--hr); } svg.chart.hr .area { fill: var(--hr); 
 'use strict';
 
 const STORAGE_KEY = 'gtg-data-v1';
-const APP_VERSION = '0.8.2';
+const APP_VERSION = '0.8.3';
 
 const DAYS = [
   ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
@@ -1427,7 +1428,7 @@ function renderPlan(main) {
           <div class="row" style="gap:8px;align-items:baseline"><span class="name grow">${esc(e.name)}</span>
             <span class="count ${left ? '' : 'ok'}"><b>${d.sets || 0}</b>/${share}</span></div>
           <div class="pbar"><span style="width:${share ? Math.min(100, (d.sets || 0) / share * 100) : 0}%"></span></div>
-          ${g.reps ? `<div class="small secondary"><button type="button" class="size-link" data-size="${esc(e.id)}" aria-label="Régler la taille des séries de ${esc(e.name)}">Séries de <span class="num">${g.reps} ${unitLabel(u)}${l.perSide ? ' par jambe' : ''}</span>${g.custom ? ' (réglée)' : ''}</button> · ${esc(l.name)}${lastOpt(e, g.i) ? ` · ${esc(optText(l, lastOpt(e, g.i)))}` : ''}</div>`
+          ${g.reps ? `<div class="small secondary"><button type="button" class="size-link" data-size="${esc(e.id)}" aria-label="Régler la taille des séries de ${esc(e.name)}">Séries de <span class="num">${g.reps} ${unitLabel(u)}${l.perSide ? ' par jambe' : ''}</span>${g.custom ? ' · réglée' : ''}${icon('down')}</button><br>${esc(l.name)}${lastOpt(e, g.i) ? ` · ${esc(optText(l, lastOpt(e, g.i)))}` : ''}</div>`
             : `<div class="small secondary">Fais d'abord un test de ton max.</div>`}
           ${g.basis === 'prev' ? `<div class="small muted">Ton max en ${esc(e.levels[g.testI].name.toLowerCase())} est encore faible (${g.max}) : on consolide le niveau d'avant.</div>` : ''}
           ${d.short >= 2 && g.reps > 1 ? `<div class="small" style="color:var(--wait)">${d.short} séries écourtées aujourd'hui : la série est trop dure. <button type="button" class="size-link" data-lower="${esc(e.id)}">Passer à ${g.reps - 1} ${unitLabel(u)}</button></div>` : ''}
@@ -1456,7 +1457,7 @@ function renderPlan(main) {
           <td class="num ${w.sets >= goal && goal ? 'ok' : ''}">${w.sets}/${goal}</td>
           <td class="num">${w.reps} ${u}</td></tr>`;
       }).join('')}</tbody></table></div></div>
-    <p class="small muted" style="padding:0 4px">Le volume compte les répétitions (ou les secondes) faites en séries. Pour ajuster la taille d'une série, touche « Séries de… » plus haut.</p>
+    <p class="small muted" style="padding:0 4px">Le volume compte les répétitions (ou les secondes) faites en séries. Pour ajuster la taille d'une série, touche le bouton « Séries de… » sous l'exercice.</p>
     <div class="grid2"><button class="btn" data-go-test>Séance test</button><button class="btn" id="day-prev">${icon('chevronLeft')} Jour précédent</button></div>
     ${!isToday ? `<button class="btn block" id="day-today">Revenir à aujourd'hui</button>` : ''}
   </section>`;

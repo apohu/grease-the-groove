@@ -316,7 +316,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .test-row { display: grid; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
 .day select { width: auto; min-width: 128px; }
 .seg button { min-width: 0; }
-.size-link { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.size-link { border: 1px solid var(--line); background: var(--raised); border-radius: 999px; padding: 2px 10px; margin: 4px 0 2px; font: inherit; color: var(--text); cursor: pointer; display: inline-block; white-space: nowrap; }
+.size-link .icon { width: 14px; height: 14px; vertical-align: -2px; margin-left: 2px; }
 /* Marche */
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .stats > div { display: grid; gap: 2px; min-width: 0; align-content: start; }
